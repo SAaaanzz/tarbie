@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { bulkGradeSchema, generateId, nowISO, ERROR_CODES, structuredLog } from '@tarbie/shared';
+import { sendGradeNotification } from './telegram-bot.js';
 
 const grades = new Hono<HonoEnv>();
 
@@ -124,10 +125,10 @@ grades.put('/sessions/:sessionId/grades', requireRole('admin', 'teacher'), async
   // Validate: present/makeup must have grade, absent must have null grade
   for (const entry of parsed.data.grades) {
     if (entry.status === 'present' && entry.grade === null) {
-      return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: `Present student ${entry.student_id} must have a grade (0-10)` }, 400);
+      return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: `Present student ${entry.student_id} must have a grade (0-100)` }, 400);
     }
     if (entry.status === 'makeup' && entry.grade === null) {
-      return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: `Makeup student ${entry.student_id} must have a grade (0-10)` }, 400);
+      return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: `Makeup student ${entry.student_id} must have a grade (0-100)` }, 400);
     }
     if (entry.status === 'absent' && entry.grade !== null) {
       return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: `Absent student cannot have a grade` }, 400);
@@ -149,6 +150,22 @@ grades.put('/sessions/:sessionId/grades', requireRole('admin', 'teacher'), async
   });
 
   await c.env.DB.batch(statements);
+
+  // Get session topic for notification
+  const sessionInfo = await c.env.DB.prepare(
+    'SELECT topic FROM tarbie_sessions WHERE id = ?'
+  ).bind(sessionId).first<{ topic: string }>();
+  const topic = sessionInfo?.topic ?? '';
+
+  // Send Telegram notifications to every student (non-blocking)
+  c.executionCtx.waitUntil((async () => {
+    for (const entry of parsed.data.grades) {
+      await sendGradeNotification(
+        entry.student_id, topic, entry.grade, entry.comment ?? null, entry.status,
+        c.env, c.env.TELEGRAM_BOT_TOKEN
+      );
+    }
+  })());
 
   structuredLog('info', 'Grades updated', { session_id: sessionId, count: parsed.data.grades.length });
   return c.json({ success: true, data: { session_id: sessionId, updated: parsed.data.grades.length } });

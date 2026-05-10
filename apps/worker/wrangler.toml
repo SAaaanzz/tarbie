@@ -20,6 +20,9 @@ queue = "tarbie-notifications"
 ENVIRONMENT = "production"
 APP_URL = "https://tarbie.online"
 
+[triggers]
+crons = ["0 4 * * *"]
+
 # Secrets (set via `wrangler secret put`):
 # JWT_SECRET
 # TELEGRAM_BOT_TOKEN

@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
-import { Sparkles, Plus, Loader2, MapPin, Users, Clock, X, Trash2, UserPlus, UserMinus } from 'lucide-react';
+import { Sparkles, Plus, Loader2, MapPin, Users, Clock, X, Trash2, UserPlus, UserMinus, DoorOpen, UsersRound } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
+import { BUILDINGS, getFloorsForBuilding, getRoomsForFloor } from '@tarbie/shared';
+import type { BuildingCode, RoomInfo } from '@tarbie/shared';
+
+interface ClassRow { id: string; name: string; }
 
 interface OpenSessionItem {
   id: string;
@@ -17,6 +21,9 @@ interface OpenSessionItem {
   teacher_id: string;
   status: string;
   teacher_avatar_url?: string | null;
+  class_id: string | null;
+  class_name: string | null;
+  room: string | null;
 }
 
 interface OpenSessionDetail extends OpenSessionItem {
@@ -124,8 +131,8 @@ export function OpenSessionsPage() {
 
       <p className="text-sm text-gray-500">
         {lang === 'kz'
-          ? 'Мұғалімдер ашық сабақтар жасайды — кез келген оқушы қатыса алады'
-          : 'Учителя создают открытые занятия — любой ученик может свободно записаться'}
+          ? 'Мұғалімдер ашық сабақтар жасайды — топ оқушылары қатыса алады'
+          : 'Учителя создают открытые занятия для группы — участники видят свои занятия'}
       </p>
 
       {loading ? (
@@ -154,7 +161,9 @@ export function OpenSessionsPage() {
               </div>
               <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                 <span className="flex items-center gap-1"><Clock size={12} />{s.session_date}{s.session_time ? ` ${s.session_time}` : ''}</span>
-                {s.location && <span className="flex items-center gap-1"><MapPin size={12} />{s.location}</span>}
+                {s.room && <span className="flex items-center gap-1"><DoorOpen size={12} />{s.room}</span>}
+                {s.class_name && <span className="flex items-center gap-1"><UsersRound size={12} />{s.class_name}</span>}
+                {!s.room && s.location && <span className="flex items-center gap-1"><MapPin size={12} />{s.location}</span>}
                 <span className="flex items-center gap-1">
                   <Users size={12} />{s.registered_count}/{s.max_students}
                 </span>
@@ -193,8 +202,12 @@ export function OpenSessionsPage() {
                     <p className="font-medium">{detail.session_date}{detail.session_time ? ` ${detail.session_time}` : ''}</p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-2.5">
-                    <p className="text-xs text-gray-500 mb-0.5">{lang === 'kz' ? 'Орны' : 'Место'}</p>
-                    <p className="font-medium">{detail.location || '—'}</p>
+                    <p className="text-xs text-gray-500 mb-0.5">{lang === 'kz' ? 'Кабинет' : 'Кабинет'}</p>
+                    <p className="font-medium">{detail.room || detail.location || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-2.5">
+                    <p className="text-xs text-gray-500 mb-0.5">{lang === 'kz' ? 'Топ' : 'Группа'}</p>
+                    <p className="font-medium">{(detail as any).class_name || '—'}</p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-2.5">
                     <p className="text-xs text-gray-500 mb-0.5">{lang === 'kz' ? 'Тіркелгендер' : 'Записано'}</p>
@@ -236,7 +249,7 @@ export function OpenSessionsPage() {
                       </button>
                     )
                   )}
-                  {canCreate && (
+                  {(isAdmin || (isTeacher && detail.teacher_id === user?.id)) && (
                     <button className="rounded-lg p-2 text-red-500 hover:bg-red-50" onClick={() => handleDelete(detail.id)}>
                       <Trash2 size={16} />
                     </button>
@@ -263,10 +276,25 @@ function CreateOpenSessionModal({ lang, onClose, onCreated }: { lang: 'kz' | 'ru
   const [description, setDescription] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const [sessionTime, setSessionTime] = useState('');
-  const [location, setLocation] = useState('');
   const [maxStudents, setMaxStudents] = useState(30);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Room selector
+  const [building, setBuilding] = useState<BuildingCode | ''>('');
+  const [floor, setFloor] = useState<number | ''>('');
+  const [selectedRoom, setSelectedRoom] = useState('');
+  const floors = building ? getFloorsForBuilding(building as BuildingCode) : [];
+  const rooms: RoomInfo[] = building && floor !== '' ? getRoomsForFloor(building as BuildingCode, Number(floor)) : [];
+
+  // Class selector
+  const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [classId, setClassId] = useState('');
+  useEffect(() => {
+    api.get<{ id: string; name: string }[]>('/api/sessions/classes')
+      .then(res => setClasses(Array.isArray(res) ? res : []))
+      .catch(() => {});
+  }, []);
 
   const todayStr = new Date().toISOString().split('T')[0]!;
 
@@ -274,15 +302,23 @@ function CreateOpenSessionModal({ lang, onClose, onCreated }: { lang: 'kz' | 'ru
     e.preventDefault();
     setSubmitting(true); setError('');
     try {
-      await api.post('/api/open-sessions', { title, description: description || undefined, session_date: sessionDate, session_time: sessionTime || undefined, location: location || undefined, max_students: maxStudents });
+      await api.post('/api/open-sessions', {
+        title,
+        description: description || undefined,
+        session_date: sessionDate,
+        session_time: sessionTime || undefined,
+        room: selectedRoom || undefined,
+        class_id: classId || undefined,
+        max_students: maxStudents,
+      });
       onCreated();
     } catch (err) { setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка')); }
     finally { setSubmitting(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl my-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">{lang === 'kz' ? 'Жаңа ашық сабақ' : 'Новое открытое занятие'}</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-gray-100"><X size={20} /></button>
@@ -298,6 +334,19 @@ function CreateOpenSessionModal({ lang, onClose, onCreated }: { lang: 'kz' | 'ru
             <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Сипаттама' : 'Описание'}</label>
             <textarea className="input-field" rows={2} value={description} onChange={e => setDescription(e.target.value)} />
           </div>
+
+          {/* Group selector */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              <UsersRound size={14} className="inline mr-1" />
+              {lang === 'kz' ? 'Топ (группа)' : 'Группа'}
+            </label>
+            <select className="input-field" value={classId} onChange={e => setClassId(e.target.value)}>
+              <option value="">{lang === 'kz' ? 'Топты таңдаңыз' : 'Выберите группу'}</option>
+              {classes.map(cl => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Күні' : 'Дата'}</label>
@@ -308,16 +357,34 @@ function CreateOpenSessionModal({ lang, onClose, onCreated }: { lang: 'kz' | 'ru
               <input type="time" className="input-field" value={sessionTime} onChange={e => setSessionTime(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Орны' : 'Место'}</label>
-              <input type="text" className="input-field" value={location} onChange={e => setLocation(e.target.value)} />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Макс. оқушы' : 'Макс. учеников'}</label>
-              <input type="number" className="input-field" value={maxStudents} min={1} onChange={e => setMaxStudents(Number(e.target.value))} />
+
+          {/* Room selector */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              <DoorOpen size={14} className="inline mr-1" />
+              {lang === 'kz' ? 'Кабинет' : 'Кабинет'}
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <select className="input-field text-sm" value={building} onChange={e => { setBuilding(e.target.value as BuildingCode | ''); setFloor(''); setSelectedRoom(''); }}>
+                <option value="">{lang === 'kz' ? 'Ғимарат' : 'Корпус'}</option>
+                {BUILDINGS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <select className="input-field text-sm" value={floor} disabled={!building} onChange={e => { setFloor(Number(e.target.value)); setSelectedRoom(''); }}>
+                <option value="">{lang === 'kz' ? 'Қабат' : 'Этаж'}</option>
+                {floors.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <select className="input-field text-sm" value={selectedRoom} disabled={!floor} onChange={e => setSelectedRoom(e.target.value)}>
+                <option value="">{lang === 'kz' ? 'Кабинет' : 'Кабинет'}</option>
+                {rooms.map(r => <option key={r.displayName} value={r.displayName}>{r.displayName}</option>)}
+              </select>
             </div>
           </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Макс. оқушы' : 'Макс. учеников'}</label>
+            <input type="number" className="input-field w-32" value={maxStudents} min={1} onChange={e => setMaxStudents(Number(e.target.value))} />
+          </div>
+
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" className="btn-secondary" onClick={onClose}>{lang === 'kz' ? 'Бас тарту' : 'Отмена'}</button>
             <button type="submit" className="btn-primary" disabled={submitting}>

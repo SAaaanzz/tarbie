@@ -157,7 +157,7 @@ auth.post('/telegram-login', rateLimit(20, 300), async (c) => {
 auth.get('/me', authMiddleware, async (c) => {
   const authUser = c.get('user');
   const user = await c.env.DB.prepare(
-    'SELECT id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, avatar_url, premium, created_at FROM users WHERE id = ?'
+    'SELECT id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, avatar_url, premium, premium_expires_at, created_at FROM users WHERE id = ?'
   ).bind(authUser.id).first();
 
   if (!user) {

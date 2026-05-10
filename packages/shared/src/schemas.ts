@@ -114,7 +114,7 @@ export const schoolSchema = z.object({
 export const gradeEntrySchema = z.object({
   student_id: z.string().uuid(),
   status: gradeStatusSchema,
-  grade: z.number().int().min(0).max(10).nullable(),
+  grade: z.number().int().min(0).max(100).nullable(),
   comment: z.string().max(500).nullable().optional(),
 });
 
@@ -123,7 +123,7 @@ export const bulkGradeSchema = z.object({
 });
 
 export const courseStatusSchema = z.enum(['draft', 'published', 'archived']);
-export const lessonTypeSchema = z.enum(['video', 'text', 'live']);
+export const lessonTypeSchema = z.enum(['video', 'text']);
 export const enrollmentStatusSchema = z.enum(['active', 'completed', 'cancelled']);
 export const lessonProgressStatusSchema = z.enum(['not_started', 'in_progress', 'completed']);
 

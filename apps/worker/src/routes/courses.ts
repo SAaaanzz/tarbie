@@ -613,4 +613,94 @@ courses.post('/:id/reviews', async (c) => {
   return c.json({ success: true, data: { id, created: true } }, 201);
 });
 
+// ── File Upload (max 10MB, stored in KV) ──
+courses.post('/:courseId/modules/:moduleId/lessons/:lessonId/file', requireRole('admin', 'teacher'), async (c) => {
+  const user = c.get('user');
+  const courseId = c.req.param('courseId');
+  const lessonId = c.req.param('lessonId');
+
+  const course = await c.env.DB.prepare(
+    'SELECT id, teacher_id FROM courses WHERE id = ? AND school_id = ?'
+  ).bind(courseId, user.school_id).first<{ id: string; teacher_id: string }>();
+  if (!course) return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'Course not found' }, 404);
+  if (user.role === 'teacher' && course.teacher_id !== user.id) {
+    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Not your course' }, 403);
+  }
+
+  const contentType = c.req.header('content-type') ?? '';
+  let fileData: ArrayBuffer;
+  let fileName: string;
+  let fileMime: string;
+
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File | null;
+    if (!file) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'No file provided' }, 400);
+    if (file.size > 10 * 1024 * 1024) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'File too large (max 10MB)' }, 400);
+    fileData = await file.arrayBuffer();
+    fileName = file.name;
+    fileMime = file.type || 'application/octet-stream';
+  } else {
+    const body = await c.req.json() as { name: string; data: string; mime?: string };
+    if (!body.name || !body.data) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'name and data (base64) required' }, 400);
+    const raw = Uint8Array.from(atob(body.data), ch => ch.charCodeAt(0));
+    if (raw.length > 10 * 1024 * 1024) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'File too large (max 10MB)' }, 400);
+    fileData = raw.buffer;
+    fileName = body.name;
+    fileMime = body.mime || 'application/octet-stream';
+  }
+
+  const fileId = generateId();
+  const kvKey = `file:${fileId}`;
+  await c.env.KV.put(kvKey, fileData, { metadata: { name: fileName, mime: fileMime, lessonId, uploadedBy: user.id, uploadedAt: nowISO() } });
+
+  // Save file reference in lesson
+  const fileUrl = `/api/courses/files/${fileId}`;
+  await c.env.DB.prepare(
+    'UPDATE lessons SET file_url = ?, file_name = ?, updated_at = ? WHERE id = ?'
+  ).bind(fileUrl, fileName, nowISO(), lessonId).run();
+
+  return c.json({ success: true, data: { file_id: fileId, file_url: fileUrl, file_name: fileName } });
+});
+
+// ── Serve file ──
+courses.get('/files/:fileId', async (c) => {
+  const fileId = c.req.param('fileId');
+  const kvKey = `file:${fileId}`;
+  const { value, metadata } = await c.env.KV.getWithMetadata<{ name: string; mime: string }>(kvKey, 'arrayBuffer');
+  if (!value || !metadata) return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'File not found' }, 404);
+
+  return new Response(value as ArrayBuffer, {
+    headers: {
+      'Content-Type': metadata.mime,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(metadata.name)}"`,
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
+});
+
+// ── Delete file ──
+courses.delete('/:courseId/modules/:moduleId/lessons/:lessonId/file', requireRole('admin', 'teacher'), async (c) => {
+  const user = c.get('user');
+  const courseId = c.req.param('courseId');
+  const lessonId = c.req.param('lessonId');
+
+  const course = await c.env.DB.prepare(
+    'SELECT id, teacher_id FROM courses WHERE id = ? AND school_id = ?'
+  ).bind(courseId, user.school_id).first<{ id: string; teacher_id: string }>();
+  if (!course) return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'Course not found' }, 404);
+  if (user.role === 'teacher' && course.teacher_id !== user.id) {
+    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Not your course' }, 403);
+  }
+
+  const lesson = await c.env.DB.prepare('SELECT file_url FROM lessons WHERE id = ?').bind(lessonId).first<{ file_url: string | null }>();
+  if (lesson?.file_url) {
+    const fileId = lesson.file_url.split('/').pop();
+    if (fileId) await c.env.KV.delete(`file:${fileId}`);
+  }
+
+  await c.env.DB.prepare('UPDATE lessons SET file_url = NULL, file_name = NULL, updated_at = ? WHERE id = ?').bind(nowISO(), lessonId).run();
+  return c.json({ success: true, data: { deleted: true } });
+});
+
 export default courses;

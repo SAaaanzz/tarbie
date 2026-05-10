@@ -98,7 +98,7 @@ export const MOCK = {
         id: 'mod_002', title: 'Модуль 2: Циклы', sort_order: 1,
         lessons: [
           { id: 'les_003', module_id: 'mod_002', title: 'For цикл', type: 'text', duration_minutes: 10, sort_order: 0 },
-          { id: 'les_004', module_id: 'mod_002', title: 'While цикл', type: 'live', duration_minutes: 30, sort_order: 1 },
+          { id: 'les_004', module_id: 'mod_002', title: 'While цикл', type: 'video', duration_minutes: 30, sort_order: 1 },
         ],
       },
     ],
@@ -124,8 +124,21 @@ export const MOCK = {
     { id: 'msg_001', ticket_id: 't_001', sender_id: 'u_student_001', sender_name: 'Тест Студент', text: 'Не могу войти в систему', created_at: '2025-04-10T10:00:00Z' },
   ],
   ratings: [
-    { teacher_id: 'u_teacher_001', teacher_name: 'Тест Учитель', avg_rating: 8.5, sessions_count: 20, completed_count: 18, completion_rate: 90, avatar_url: null, premium_frame: null, premium_name_color: null },
+    { teacher_id: 'u_teacher_001', teacher_name: 'Тест Учитель', total_ratings: 20, valid_ratings: 18, average_rating: 8.5, teacher_avatar_url: null },
+    { teacher_id: 'u_teacher_002', teacher_name: 'Второй Учитель', total_ratings: 5, valid_ratings: 4, average_rating: 7.0, teacher_avatar_url: null },
   ],
+  teacherRatingDetail: {
+    teacher_id: 'u_teacher_001',
+    teacher_name: 'Тест Учитель',
+    total_ratings: 20,
+    valid_ratings: 18,
+    average_rating: 8.5,
+    recent_reviews: [
+      { rating: 9, reason: 'Отлично объяснил!', created_at: '2025-04-15T10:00:00Z', is_anonymous: false, student_name: 'Иванов Иван', student_avatar_url: null },
+      { rating: 7, reason: 'Хорошо, но хотелось бы больше примеров', created_at: '2025-04-14T09:00:00Z', is_anonymous: true, student_name: null, student_avatar_url: null },
+      { rating: 10, reason: 'Лучший преподаватель!', created_at: '2025-04-13T11:00:00Z', is_anonymous: false, student_name: 'Петров Петр', student_avatar_url: null },
+    ],
+  },
   reports: {
     summary: { total_sessions: 50, completed_sessions: 40, completion_rate: 80, total_classes: 5 },
     teachers: [{ teacher_id: 'u_teacher_001', teacher_name: 'Тест Учитель', total: 20, completed: 18, rate: 90 }],
@@ -178,9 +191,9 @@ export async function setupMocks(page: Page, user = ADMIN_USER) {
       return route.fulfill({ json: { success: true, data: { avatar_url: '/avatars/test.jpg' } } });
     }
 
-    // Sessions
+    // Sessions (getRaw expects top-level { data, total })
     if (path === '/api/sessions' && method === 'GET') {
-      return route.fulfill({ json: { success: true, data: MOCK.sessions } });
+      return route.fulfill({ json: { data: MOCK.sessions.data, total: MOCK.sessions.total, page: 1, pageSize: 50, success: true } });
     }
     if (path === '/api/sessions' && method === 'POST') {
       return route.fulfill({ status: 201, json: { success: true, data: { id: 's_new_001' } } });
@@ -365,6 +378,9 @@ export async function setupMocks(page: Page, user = ADMIN_USER) {
     if (path === '/api/ratings/teachers' && method === 'GET') {
       return route.fulfill({ json: { success: true, data: MOCK.ratings } });
     }
+    if (path.match(/\/api\/ratings\/teacher\/[^/]+$/) && method === 'GET') {
+      return route.fulfill({ json: { success: true, data: MOCK.teacherRatingDetail } });
+    }
 
     // Support
     if (path === '/api/support/tickets' && method === 'GET') {
@@ -426,4 +442,178 @@ export async function goTo(page: Page, path: string) {
   await page.goto(path, { waitUntil: 'domcontentloaded' });
   // Wait for React to render and auth to rehydrate
   await page.waitForTimeout(1500);
+}
+
+/* ─── Bulk Data Generators ─── */
+
+export function generateEvents(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `ev_gen_${i}`,
+    title: `Мероприятие #${i + 1}`,
+    description: `Описание мероприятия ${i + 1}`,
+    event_date: '2025-09-01',
+    event_time: `${String(10 + Math.floor(i / 6)).padStart(2, '0')}:${String((i % 6) * 10).padStart(2, '0')}`,
+    location: 'Актовый зал',
+    capacity: 100,
+    registered_count: Math.floor(Math.random() * 50),
+    creator_id: 'u_admin_001',
+    creator_name: 'Тест Админ',
+    is_registered: false,
+    created_at: '2025-01-01',
+  }));
+}
+
+export function generateUsers(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `u_gen_${i}`,
+    full_name: `Студент ${i + 1}`,
+    phone: `+7700${String(i).padStart(7, '0')}`,
+    role: i === 0 ? 'admin' : i < 3 ? 'teacher' : 'student',
+    school_id: 's_001',
+    class_id: i >= 3 ? 'c_001' : null,
+    lang: 'ru',
+    avatar_url: null,
+    premium: false,
+    premium_frame: null,
+    premium_name_color: null,
+    created_at: '2024-01-01T00:00:00Z',
+  }));
+}
+
+export function generateSessions(count: number) {
+  return {
+    data: Array.from({ length: count }, (_, i) => ({
+      id: `s_gen_${i}`,
+      class_id: 'c_001',
+      teacher_id: 'u_teacher_001',
+      topic: `Тема ${i + 1}`,
+      planned_date: '2025-04-20',
+      time_slot: '08:00-08:30',
+      room: `${100 + i}`,
+      status: i % 3 === 0 ? 'completed' : 'planned',
+      duration_minutes: 30,
+      class_name: 'ИТ-21',
+      teacher_name: 'Тест Учитель',
+      created_at: '2025-01-01T00:00:00Z',
+      completed_at: null,
+      cancelled_reason: null,
+    })),
+    total: count,
+  };
+}
+
+export function generateCourses(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `crs_gen_${i}`,
+    title: `Курс ${i + 1}`,
+    description: `Описание курса ${i + 1}`,
+    teacher_id: 'u_teacher_001',
+    category_id: 'cat_001',
+    price: 0,
+    status: 'published',
+    cover_url: null,
+    lang: 'ru',
+    created_at: '2025-01-01',
+    teacher_name: 'Тест Учитель',
+    teacher_avatar_url: null,
+    category_name: 'Программирование',
+    enrolled_count: Math.floor(Math.random() * 20),
+    avg_rating: +(3 + Math.random() * 2).toFixed(1),
+    modules_count: 2,
+    lessons_count: 4,
+  }));
+}
+
+export function generateOpenSessions(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `os_gen_${i}`,
+    title: `Открытое занятие ${i + 1}`,
+    description: 'Демо',
+    session_date: '2025-04-25',
+    session_time: `${String(10 + (i % 8)).padStart(2, '0')}:00`,
+    location: 'Лаб.',
+    max_students: 30,
+    registered_count: Math.floor(Math.random() * 15),
+    teacher_id: 'u_teacher_001',
+    teacher_name: 'Тест Учитель',
+    is_registered: false,
+    created_at: '2025-01-01',
+  }));
+}
+
+/** All pages used for scanning */
+export const ALL_PAGES = [
+  '/', '/sessions', '/grades', '/events', '/open-sessions',
+  '/courses', '/my-courses', '/admin/users', '/admin/classes',
+  '/profile', '/settings', '/ratings', '/reports', '/assistant', '/support',
+];
+
+/** Setup mocks with custom data overrides for bulk tests */
+export async function setupBulkMocks(
+  page: Page,
+  user = ADMIN_USER,
+  overrides: { events?: number; users?: number; sessions?: number; courses?: number; openSessions?: number } = {},
+) {
+  const events = overrides.events ? generateEvents(overrides.events) : MOCK.events;
+  const users = overrides.users ? generateUsers(overrides.users) : MOCK.users;
+  const sessions = overrides.sessions ? generateSessions(overrides.sessions) : MOCK.sessions;
+  const courses = overrides.courses ? generateCourses(overrides.courses) : MOCK.courses;
+  const openSessions = overrides.openSessions ? generateOpenSessions(overrides.openSessions) : MOCK.openSessions;
+
+  await page.addInitScript((u) => {
+    const state = { state: { token: 'fake_jwt_token', lang: u.lang }, version: 0 };
+    localStorage.setItem('tarbie-auth', JSON.stringify(state));
+  }, user);
+
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const method = route.request().method();
+
+    if (path === '/api/auth/me' && method === 'GET') return route.fulfill({ json: { success: true, data: user } });
+    if (path === '/api/sessions' && method === 'GET') {
+      const s = Array.isArray(sessions) ? sessions : (sessions as any);
+      return route.fulfill({ json: { data: s.data ?? s, total: s.total ?? (Array.isArray(s) ? s.length : 0), page: 1, pageSize: 50, success: true } });
+    }
+    if (path === '/api/sessions' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `s_new_${Date.now()}` } } });
+    if (path === '/api/sessions/classes' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.classes.map(c => ({ id: c.id, name: c.name })) } });
+    if (path === '/api/events' && method === 'GET') return route.fulfill({ json: { success: true, data: events } });
+    if (path === '/api/events' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `ev_new_${Date.now()}` } } });
+    if (path.match(/\/api\/events\/[^/]+$/) && method === 'DELETE') return route.fulfill({ json: { success: true, data: {} } });
+    if (path === '/api/open-sessions' && method === 'GET') return route.fulfill({ json: { success: true, data: openSessions } });
+    if (path === '/api/open-sessions' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `os_new_${Date.now()}` } } });
+    if (path === '/api/courses' && method === 'GET') return route.fulfill({ json: { success: true, data: courses } });
+    if (path === '/api/courses' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `crs_new_${Date.now()}` } } });
+    if (path === '/api/courses/categories' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.categories } });
+    if (path === '/api/courses/my/enrolled' && method === 'GET') return route.fulfill({ json: { success: true, data: [] } });
+    if (path === '/api/admin/users' && method === 'GET') return route.fulfill({ json: { success: true, data: users } });
+    if (path === '/api/admin/users' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `u_new_${Date.now()}` } } });
+    if (path.match(/\/api\/admin\/users\/[^/]+$/) && method === 'DELETE') {
+      const id = path.split('/').pop();
+      const target = (users as any[]).find((u: any) => u.id === id);
+      if (target && target.role === 'admin') return route.fulfill({ status: 403, json: { success: false, error: 'Cannot delete admin', code: 'FORBIDDEN' } });
+      return route.fulfill({ json: { success: true, data: {} } });
+    }
+    if (path === '/api/admin/classes' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.classes } });
+    if (path === '/api/admin/classes' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `c_new_${Date.now()}` } } });
+    if (path.match(/\/api\/admin\/classes\/[^/]+$/) && method === 'DELETE') return route.fulfill({ json: { success: true, data: {} } });
+    if (path === '/api/support/tickets' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.supportTickets } });
+    if (path === '/api/support/tickets' && method === 'POST') return route.fulfill({ status: 201, json: { success: true, data: { id: `t_new_${Date.now()}` } } });
+    if (path.match(/\/api\/support\/[^/]+\/messages/) && method === 'POST') return route.fulfill({ json: { success: true, data: { id: `msg_new_${Date.now()}` } } });
+    if (path.match(/\/api\/support\/[^/]+\/messages/) && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.supportMessages } });
+    if (path === '/api/ratings' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.ratings } });
+    if (path === '/api/ratings/teachers' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.ratings } });
+    if (path.match(/\/api\/ratings\/teacher\/[^/]+$/) && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.teacherRatingDetail } });
+    if (path === '/api/ratings' && method === 'POST') return route.fulfill({ json: { success: true, data: { id: 'r_new' } } });
+    if (path.match(/\/api\/courses\/[^/]+\/reviews/) && method === 'POST') return route.fulfill({ json: { success: true, data: { id: 'rev_new' } } });
+    if (path === '/api/reports' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.reports } });
+    if (path === '/api/notifications' && method === 'GET') return route.fulfill({ json: { success: true, data: [] } });
+    if (path === '/api/health') return route.fulfill({ json: { success: true, data: { status: 'ok' } } });
+    if (path === '/api/grades' && method === 'GET') return route.fulfill({ json: { success: true, data: MOCK.sessions.data } });
+    if (path.match(/\/api\/grades/)) return route.fulfill({ json: { success: true, data: MOCK.grades } });
+    if (path === '/api/sessions/booked-rooms') return route.fulfill({ json: { success: true, data: [] } });
+    if (path.match(/\/api\/admin\/settings/)) return route.fulfill({ json: { success: true, data: {} } });
+
+    return route.fulfill({ json: { success: true, data: {} } });
+  });
 }

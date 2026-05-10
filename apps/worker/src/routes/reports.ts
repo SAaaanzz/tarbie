@@ -44,14 +44,26 @@ reports.get('/monthly', async (c) => {
 
   for (const session of sessions.results) {
     const sid = (session as Record<string, unknown>)['id'] as string;
-    const att = await c.env.DB.prepare(
+    // Check grades table first (primary attendance source)
+    const gradeAtt = await c.env.DB.prepare(
       `SELECT COUNT(*) as total,
-              SUM(CASE WHEN status IN ('present','late') THEN 1 ELSE 0 END) as present_count
-       FROM session_attendance WHERE session_id = ?`
+              SUM(CASE WHEN status IN ('present','makeup') THEN 1 ELSE 0 END) as present_count
+       FROM grades WHERE session_id = ?`
     ).bind(sid).first<{ total: number; present_count: number }>();
-    if (att) {
-      totalAttendanceRecords += att.total;
-      totalPresentRecords += att.present_count;
+    if (gradeAtt && gradeAtt.total > 0) {
+      totalAttendanceRecords += gradeAtt.total;
+      totalPresentRecords += gradeAtt.present_count;
+    } else {
+      // Fallback to session_attendance
+      const att = await c.env.DB.prepare(
+        `SELECT COUNT(*) as total,
+                SUM(CASE WHEN status IN ('present','late') THEN 1 ELSE 0 END) as present_count
+         FROM session_attendance WHERE session_id = ?`
+      ).bind(sid).first<{ total: number; present_count: number }>();
+      if (att && att.total > 0) {
+        totalAttendanceRecords += att.total;
+        totalPresentRecords += att.present_count;
+      }
     }
   }
 

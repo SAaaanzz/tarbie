@@ -19,7 +19,7 @@ interface TeacherDetail {
   total_ratings: number;
   valid_ratings: number;
   average_rating: number;
-  recent_reviews: { rating: number; reason: string; created_at: string; student_name: string; student_avatar_url?: string | null }[];
+  recent_reviews: { rating: number; reason: string; created_at: string; is_anonymous: boolean; student_name: string | null; student_avatar_url?: string | null }[];
 }
 
 function ratingColor(r: number): string {
@@ -41,6 +41,7 @@ export function TeacherRatingsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TeacherDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(false);
   const k = lang === 'kz';
 
   useEffect(() => {
@@ -48,14 +49,20 @@ export function TeacherRatingsPage() {
   }, []);
 
   const toggleExpand = async (teacherId: string) => {
-    if (expandedId === teacherId) { setExpandedId(null); setDetail(null); return; }
+    if (expandedId === teacherId) { setExpandedId(null); setDetail(null); setDetailError(false); return; }
     setExpandedId(teacherId);
+    setDetail(null);
     setDetailLoading(true);
+    setDetailError(false);
     try {
       const d = await api.get<TeacherDetail>(`/api/ratings/teacher/${teacherId}`);
+      // Ensure recent_reviews is always an array
+      if (d && !Array.isArray(d.recent_reviews)) d.recent_reviews = [];
       setDetail(d);
-    } catch { setDetail(null); }
-    finally { setDetailLoading(false); }
+    } catch {
+      setDetail(null);
+      setDetailError(true);
+    } finally { setDetailLoading(false); }
   };
 
   if (loading) return <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-primary-600 border-t-transparent rounded-full" /></div>;
@@ -108,6 +115,8 @@ export function TeacherRatingsPage() {
                 <div className="border-t border-gray-100 p-4 bg-gray-50">
                   {detailLoading ? (
                     <div className="text-center py-4"><div className="animate-spin h-5 w-5 border-2 border-primary-600 border-t-transparent rounded-full mx-auto" /></div>
+                  ) : detailError ? (
+                    <p className="text-sm text-red-500 text-center py-4">{k ? 'Жүктеу қатесі' : 'Ошибка загрузки'}</p>
                   ) : detail ? (
                     <div>
                       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -123,12 +132,12 @@ export function TeacherRatingsPage() {
                         </div>
                         <div className="rounded-xl bg-white p-3 border text-center">
                           <MessageSquare size={16} className="mx-auto text-blue-500 mb-1" />
-                          <p className="text-lg font-bold text-gray-900">{detail.recent_reviews.length}</p>
+                          <p className="text-lg font-bold text-gray-900">{detail.recent_reviews?.length ?? 0}</p>
                           <p className="text-[10px] text-gray-500">{k ? 'Пікірлер' : 'Отзывов'}</p>
                         </div>
                       </div>
 
-                      {detail.recent_reviews.length > 0 ? (
+                      {detail.recent_reviews && detail.recent_reviews.length > 0 ? (
                         <div className="space-y-2">
                           <h4 className="text-xs font-semibold text-gray-600 mb-2">{k ? 'Соңғы пікірлер' : 'Последние отзывы'}</h4>
                           {detail.recent_reviews.map((r, i) => (
@@ -139,8 +148,14 @@ export function TeacherRatingsPage() {
                               </div>
                               <p className="text-sm text-gray-800">{r.reason}</p>
                               <div className="flex items-center gap-1 mt-1">
-                                <Avatar name={r.student_name} size="xs" avatarUrl={r.student_avatar_url} />
-                                <span className="text-[10px] text-gray-500">— {r.student_name}</span>
+                                {r.is_anonymous || !r.student_name ? (
+                                  <span className="text-[10px] text-gray-400 italic">🕶 {k ? 'Аноним' : 'Аноним'}</span>
+                                ) : (
+                                  <>
+                                    <Avatar name={r.student_name} size="xs" avatarUrl={r.student_avatar_url} />
+                                    <span className="text-[10px] text-gray-500">— {r.student_name}</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           ))}

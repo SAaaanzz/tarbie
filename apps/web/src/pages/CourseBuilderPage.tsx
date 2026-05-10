@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { navigate } from '../lib/router';
 import {
   ArrowLeft, Plus, Trash2, GripVertical, Save, Eye, BookOpen,
-  ChevronDown, ChevronUp, Video, FileText, Radio, Loader2, X, Check,
+  ChevronDown, ChevronUp, Video, FileText, Loader2, X, Check, Upload, Paperclip,
 } from 'lucide-react';
 import type { Lang } from '@tarbie/shared';
 
@@ -17,6 +17,8 @@ interface LessonRow {
   type: string;
   content: string;
   video_url: string | null;
+  file_url: string | null;
+  file_name: string | null;
   duration_minutes: number;
   sort_order: number;
 }
@@ -154,6 +156,8 @@ export function CourseBuilderPage({ courseId }: { courseId: string | null }) {
         type: 'text',
         content: '',
         video_url: null,
+        file_url: null,
+        file_name: null,
         duration_minutes: 0,
         sort_order: 0,
       };
@@ -363,7 +367,6 @@ export function CourseBuilderPage({ courseId }: { courseId: string | null }) {
                         <div key={lesson.id} className="flex items-center gap-2 border-b border-gray-50 px-4 py-2 hover:bg-gray-50">
                           <GripVertical size={14} className="text-gray-200 cursor-grab" />
                           {lesson.type === 'video' ? <Video size={14} className="text-blue-500" /> :
-                           lesson.type === 'live' ? <Radio size={14} className="text-red-500" /> :
                            <FileText size={14} className="text-gray-400" />}
                           <button
                             onClick={() => { setEditingLesson({ ...lesson }); }}
@@ -424,7 +427,6 @@ export function CourseBuilderPage({ courseId }: { courseId: string | null }) {
                   {[
                     { value: 'text', icon: <FileText size={14} />, label: t(lang, 'Мәтін', 'Текст') },
                     { value: 'video', icon: <Video size={14} />, label: t(lang, 'Видео', 'Видео') },
-                    { value: 'live', icon: <Radio size={14} />, label: t(lang, 'Тікелей', 'Эфир') },
                   ].map(opt => (
                     <button
                       key={opt.value}
@@ -476,6 +478,73 @@ export function CourseBuilderPage({ courseId }: { courseId: string | null }) {
                   onChange={(e) => setEditingLesson({ ...editingLesson, content: e.target.value })}
                   placeholder={t(lang, 'Сабақ мазмұны...', 'Содержание урока...')}
                 />
+              </div>
+
+              {/* File attachment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <Paperclip size={14} className="inline mr-1" />
+                  {t(lang, 'Файл (макс 10 MB)', 'Файл (макс 10 MB)')}
+                </label>
+                {editingLesson.file_url ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <Paperclip size={14} className="text-blue-500" />
+                    <a href={`https://dprabota.bahtyarsanzhar.workers.dev${editingLesson.file_url}`} target="_blank" rel="noopener" className="text-sm text-blue-600 hover:underline flex-1 truncate">
+                      {editingLesson.file_name || t(lang, 'Файл', 'Файл')}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!course) return;
+                        try {
+                          await api.delete(`/api/courses/${course.id}/modules/${editingLesson.module_id}/lessons/${editingLesson.id}/file`);
+                          setEditingLesson({ ...editingLesson, file_url: null, file_name: null });
+                          setModules(prev => prev.map(m => m.id === editingLesson.module_id
+                            ? { ...m, lessons: m.lessons.map(l => l.id === editingLesson.id ? { ...l, file_url: null, file_name: null } : l) }
+                            : m
+                          ));
+                        } catch { }
+                      }}
+                      className="p-1 text-red-400 hover:text-red-600"
+                      title={t(lang, 'Файлды жою', 'Удалить файл')}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-primary-400 bg-gray-50 hover:bg-primary-50 px-4 py-3 cursor-pointer transition-colors">
+                    <Upload size={16} className="text-gray-400" />
+                    <span className="text-sm text-gray-500">{t(lang, 'Файлды таңдаңыз', 'Выберите файл')}</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !course) return;
+                        if (file.size > 10 * 1024 * 1024) {
+                          alert(t(lang, 'Файл 10 MB-дан аспауы керек', 'Файл не должен превышать 10 MB'));
+                          return;
+                        }
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        try {
+                          const res = await fetch(
+                            `https://dprabota.bahtyarsanzhar.workers.dev/api/courses/${course.id}/modules/${editingLesson.module_id}/lessons/${editingLesson.id}/file`,
+                            { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('tarbie-auth') ? JSON.parse(localStorage.getItem('tarbie-auth')!).state?.token : ''}` }, body: formData }
+                          );
+                          const json = await res.json() as { success: boolean; data?: { file_url: string; file_name: string } };
+                          if (json.success && json.data) {
+                            setEditingLesson({ ...editingLesson, file_url: json.data.file_url, file_name: json.data.file_name });
+                            setModules(prev => prev.map(m => m.id === editingLesson.module_id
+                              ? { ...m, lessons: m.lessons.map(l => l.id === editingLesson.id ? { ...l, file_url: json.data!.file_url, file_name: json.data!.file_name } : l) }
+                              : m
+                            ));
+                          }
+                        } catch { }
+                      }}
+                    />
+                  </label>
+                )}
               </div>
             </div>
 

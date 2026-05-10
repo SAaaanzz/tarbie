@@ -10,6 +10,7 @@ export interface Env {
   ENVIRONMENT: string;
   APP_URL: string;
   GEMINI_API_KEY: string;
+  PREMIUM_SECRET: string;
 }
 
 export interface AuthUser {

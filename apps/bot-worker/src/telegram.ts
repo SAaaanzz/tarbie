@@ -53,7 +53,6 @@ export async function handleTelegramWebhook(request: Request, env: BotEnv): Prom
         {
           keyboard: [[{ text: '📱 Отправить номер телефона', request_contact: true }]],
           resize_keyboard: true,
-          one_time_keyboard: true,
         });
       return new Response('OK', { status: 200 });
     }
@@ -85,10 +84,19 @@ export async function handleTelegramWebhook(request: Request, env: BotEnv): Prom
       {
         keyboard: [[{ text: '📱 Отправить номер телефона', request_contact: true }]],
         resize_keyboard: true,
-        one_time_keyboard: true,
       });
   } else {
-    await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, getHelpMessage(null));
+    // Check if user is linked
+    const linked = await env.DB.prepare('SELECT id, lang FROM users WHERE telegram_chat_id = ?')
+      .bind(chatId).first<{ id: string; lang: string }>();
+    if (linked) {
+      await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, getHelpMessage(linked.lang as Lang));
+    } else {
+      await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, getHelpMessage(null), {
+        keyboard: [[{ text: '📱 Отправить номер телефона', request_contact: true }]],
+        resize_keyboard: true,
+      });
+    }
   }
 
   return new Response('OK', { status: 200 });
@@ -150,9 +158,9 @@ async function handleStart(env: BotEnv, chatId: string, text: string, fromName: 
   if (existingUser) {
     const lang = existingUser.lang as Lang;
     const msg = lang === 'kz'
-      ? `Сәлеметсіз бе, ${existingUser.full_name}! Сіз тіркелгенсіз.\n\n/my_sessions — Менің тәрбие сағаттарым`
-      : `Здравствуйте, ${existingUser.full_name}! Вы уже зарегистрированы.\n\n/my_sessions — Мои классные часы`;
-    await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, msg);
+      ? `Сәлеметсіз бе, ${existingUser.full_name}! Сіз тіркелгенсіз.\n\n/my_sessions — Менің тәрбие сағаттарым\n/login — Жүйеге кіру`
+      : `Здравствуйте, ${existingUser.full_name}! Вы уже зарегистрированы.\n\n/my_sessions — Мои классные часы\n/login — Войти в систему`;
+    await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, msg, { remove_keyboard: true });
   } else {
     const msg = '🏫 <b>Тәрбие Сағаты Manager</b>\n\n' +
       'Для привязки аккаунта нажмите кнопку ниже, чтобы безопасно поделиться своим номером телефона.';
@@ -160,7 +168,6 @@ async function handleStart(env: BotEnv, chatId: string, text: string, fromName: 
     const keyboard = {
       keyboard: [[{ text: '📱 Отправить номер телефона', request_contact: true }]],
       resize_keyboard: true,
-      one_time_keyboard: true,
     };
     await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, msg, keyboard);
   }
@@ -177,7 +184,6 @@ async function handleLogin(env: BotEnv, chatId: string): Promise<void> {
       {
         keyboard: [[{ text: '📱 Отправить номер телефона', request_contact: true }]],
         resize_keyboard: true,
-        one_time_keyboard: true,
       });
     return;
   }

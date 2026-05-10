@@ -63,9 +63,9 @@ interface StudentMonthly {
 /* ─── Helpers ─── */
 
 function gradeColor(g: number): string {
-  if (g >= 8) return 'text-green-700 bg-green-100';
-  if (g >= 5) return 'text-blue-700 bg-blue-100';
-  if (g >= 3) return 'text-amber-700 bg-amber-100';
+  if (g >= 80) return 'text-green-700 bg-green-100';
+  if (g >= 50) return 'text-blue-700 bg-blue-100';
+  if (g >= 30) return 'text-amber-700 bg-amber-100';
   return 'text-red-700 bg-red-100';
 }
 
@@ -353,7 +353,7 @@ function SessionGradingForm({ lang, session, onBack }: {
         }
       } else if (field === 'grade') {
         const v = Number(value);
-        entry.grade = isNaN(v) ? null : Math.min(10, Math.max(0, v));
+        entry.grade = isNaN(v) ? null : Math.min(100, Math.max(0, v));
       } else if (field === 'comment') {
         entry.comment = value as string;
       }
@@ -421,7 +421,7 @@ function SessionGradingForm({ lang, session, onBack }: {
                     {lang === 'kz' ? 'Қатысу' : 'Статус'}
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">
-                    {lang === 'kz' ? 'Баға (0-10)' : 'Оценка (0-10)'}
+                    {lang === 'kz' ? 'Баға (0-100)' : 'Оценка (0-100)'}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     {lang === 'kz' ? 'Пікір' : 'Комментарий'}
@@ -447,8 +447,8 @@ function SessionGradingForm({ lang, session, onBack }: {
                         value={e.status}
                         onChange={(ev) => updateEntry(idx, 'status', ev.target.value)}
                       >
-                        <option value="present">{lang === 'kz' ? '✓ Келді' : '✓ Присутствовал'}</option>
-                        <option value="absent">{lang === 'kz' ? '✗ Келмеді (Н)' : '✗ Отсутствовал (Н)'}</option>
+                        <option value="present">{lang === 'kz' ? '✓ Қатысты' : '✓ Присутствовал(а)'}</option>
+                        <option value="absent">{lang === 'kz' ? '✗ Келмеді (Н)' : '✗ Отсутствовал(а) (Н)'}</option>
                         <option value="makeup">{lang === 'kz' ? '↻ Отработка Н(X)' : '↻ Отработка Н(X)'}</option>
                       </select>
                     </td>
@@ -459,7 +459,7 @@ function SessionGradingForm({ lang, session, onBack }: {
                         <input
                           type="number"
                           min={0}
-                          max={10}
+                          max={100}
                           className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-center text-sm font-medium focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                           value={e.grade ?? ''}
                           onChange={(ev) => updateEntry(idx, 'grade', ev.target.value)}
@@ -560,8 +560,8 @@ function StudentView({ lang, userId }: { lang: 'kz' | 'ru'; userId: string }) {
               </p>
               <p className="mt-1 text-xs text-gray-400">
                 {lang === 'kz'
-                  ? `${m.total_sessions} сабақ, қосынды: ${m.sum_grades}`
-                  : `${m.total_sessions} уроков, сумма: ${m.sum_grades}`}
+                  ? `${m.total_sessions} сабақ, баллдар: ${m.sum_grades}`
+                  : `${m.total_sessions} уроков, баллы: ${m.sum_grades}`}
               </p>
             </div>
           ))}
@@ -598,9 +598,9 @@ function StudentView({ lang, userId }: { lang: 'kz' | 'ru'; userId: string }) {
                     <div className="flex items-center justify-center gap-1">
                       {statusIcon(g.status)}
                       <span className="text-xs">{
-                        g.status === 'present' ? (lang === 'kz' ? 'Келді' : 'Был') :
-                        g.status === 'makeup' ? (lang === 'kz' ? 'Отработка' : 'Отраб.') :
-                        lang === 'kz' ? 'Келмеді' : 'Н'
+                        g.status === 'present' ? (lang === 'kz' ? 'Қатысты' : 'Присутствовал(а)') :
+                        g.status === 'makeup' ? (lang === 'kz' ? 'Отработка' : 'Отработка') :
+                        lang === 'kz' ? 'Келмеді' : 'Отсутствовал(а)'
                       }</span>
                     </div>
                   </td>
@@ -639,9 +639,9 @@ function StudentView({ lang, userId }: { lang: 'kz' | 'ru'; userId: string }) {
                 <span>{g.planned_date}</span>
                 <span className="flex items-center gap-1">
                   {statusIcon(g.status)}
-                  {g.status === 'present' ? (lang === 'kz' ? 'Келді' : 'Был') :
-                   g.status === 'makeup' ? (lang === 'kz' ? 'Отработка' : 'Отраб.') :
-                   lang === 'kz' ? 'Келмеді' : 'Н'}
+                  {g.status === 'present' ? (lang === 'kz' ? 'Қатысты' : 'Присутствовал(а)') :
+                   g.status === 'makeup' ? (lang === 'kz' ? 'Отработка' : 'Отработка') :
+                   lang === 'kz' ? 'Келмеді' : 'Отсутствовал(а)'}
                 </span>
               </div>
               {g.comment && <p className="text-xs text-gray-400">{g.comment}</p>}

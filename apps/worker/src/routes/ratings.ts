@@ -30,7 +30,7 @@ function filterRating(rating: number, reason: string | null): { valid: boolean; 
 ratings.post('/session/:sessionId', authMiddleware, async (c) => {
   const authUser = c.get('user');
   const sessionId = c.req.param('sessionId');
-  const body = await c.req.json() as { rating: number; reason?: string };
+  const body = await c.req.json() as { rating: number; reason?: string; is_anonymous?: boolean };
 
   if (authUser.role !== 'student') {
     return c.json({ success: false, code: 'FORBIDDEN', message: 'Only students can rate sessions' }, 403);
@@ -61,12 +61,13 @@ ratings.post('/session/:sessionId', authMiddleware, async (c) => {
   const reason = body.reason?.trim() || null;
   const { valid, filterReason } = filterRating(body.rating, reason);
 
+  const isAnonymous = body.is_anonymous ? 1 : 0;
   const id = generateId();
   await c.env.DB.prepare(
-    'INSERT INTO session_ratings (id, session_id, student_id, teacher_id, rating, reason, is_valid, filter_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, sessionId, authUser.id, session.teacher_id, body.rating, reason, valid ? 1 : 0, filterReason, nowISO()).run();
+    'INSERT INTO session_ratings (id, session_id, student_id, teacher_id, rating, reason, is_valid, filter_reason, is_anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, sessionId, authUser.id, session.teacher_id, body.rating, reason, valid ? 1 : 0, filterReason, isAnonymous, nowISO()).run();
 
-  return c.json({ success: true, data: { id, is_valid: valid } });
+  return c.json({ success: true, data: { id, is_valid: valid, is_anonymous: !!isAnonymous } });
 });
 
 // ── Get teacher rating stats (admin/teacher) ──
@@ -99,13 +100,13 @@ ratings.get('/teacher/:teacherId', authMiddleware, async (c) => {
 
   // Recent reviews with reasons
   const reviews = await c.env.DB.prepare(
-    `SELECT sr.rating, sr.reason, sr.created_at, u.full_name as student_name,
-            u.avatar_url as student_avatar_url
+    `SELECT sr.rating, sr.reason, sr.created_at, sr.is_anonymous,
+            u.full_name as student_name, u.avatar_url as student_avatar_url
      FROM session_ratings sr
      JOIN users u ON sr.student_id = u.id
      WHERE sr.teacher_id = ? AND sr.is_valid = 1 AND sr.reason IS NOT NULL AND sr.reason != ''
      ORDER BY sr.created_at DESC LIMIT 20`
-  ).bind(teacherId).all<{ rating: number; reason: string; created_at: string; student_name: string }>();
+  ).bind(teacherId).all<{ rating: number; reason: string; created_at: string; is_anonymous: number; student_name: string; student_avatar_url: string | null }>();
 
   return c.json({
     success: true,
@@ -115,7 +116,14 @@ ratings.get('/teacher/:teacherId', authMiddleware, async (c) => {
       total_ratings: totalAll?.total ?? 0,
       valid_ratings: stats?.total ?? 0,
       average_rating: Math.round((stats?.avg_rating ?? 0) * 10) / 10,
-      recent_reviews: reviews.results,
+      recent_reviews: reviews.results.map(r => ({
+        rating: r.rating,
+        reason: r.reason,
+        created_at: r.created_at,
+        is_anonymous: !!r.is_anonymous,
+        student_name: r.is_anonymous ? 'Аноним' : r.student_name,
+        student_avatar_url: r.is_anonymous ? null : r.student_avatar_url,
+      })),
     },
   });
 });
@@ -159,15 +167,57 @@ ratings.get('/session/:sessionId', authMiddleware, async (c) => {
   const sessionId = c.req.param('sessionId');
 
   const results = await c.env.DB.prepare(
-    `SELECT sr.id, sr.rating, sr.reason, sr.is_valid, sr.filter_reason, sr.created_at,
+    `SELECT sr.id, sr.rating, sr.reason, sr.is_valid, sr.filter_reason, sr.is_anonymous, sr.created_at,
             u.full_name as student_name
      FROM session_ratings sr
      JOIN users u ON sr.student_id = u.id
      WHERE sr.session_id = ?
      ORDER BY sr.created_at DESC`
-  ).bind(sessionId).all();
+  ).bind(sessionId).all<{ id: string; rating: number; reason: string | null; is_valid: number; filter_reason: string | null; is_anonymous: number; created_at: string; student_name: string }>();
 
-  return c.json({ success: true, data: results.results });
+  return c.json({
+    success: true,
+    data: results.results.map(r => ({
+      ...r,
+      is_anonymous: !!r.is_anonymous,
+      student_name: r.is_anonymous ? 'Аноним' : r.student_name,
+    })),
+  });
+});
+
+// ── Get student's completed sessions available for rating ──
+ratings.get('/my-sessions', authMiddleware, async (c) => {
+  const authUser = c.get('user');
+  if (authUser.role !== 'student') {
+    return c.json({ success: false, code: 'FORBIDDEN', message: 'Students only' }, 403);
+  }
+
+  const rows = await c.env.DB.prepare(
+    `SELECT ts.id, ts.topic, ts.planned_date, ts.teacher_id,
+            u.full_name as teacher_name,
+            (SELECT id FROM session_ratings sr WHERE sr.session_id = ts.id AND sr.student_id = ?) as rated_id
+     FROM tarbie_sessions ts
+     JOIN classes c ON ts.class_id = c.id
+     JOIN class_students cs ON cs.class_id = c.id AND cs.student_id = ?
+     JOIN users u ON ts.teacher_id = u.id
+     WHERE ts.status = 'completed'
+     ORDER BY ts.planned_date DESC
+     LIMIT 50`
+  ).bind(authUser.id, authUser.id).all<{
+    id: string; topic: string; planned_date: string; teacher_id: string;
+    teacher_name: string; rated_id: string | null;
+  }>();
+
+  return c.json({
+    success: true,
+    data: rows.results.map(r => ({
+      session_id: r.id,
+      topic: r.topic,
+      planned_date: r.planned_date,
+      teacher_name: r.teacher_name,
+      already_rated: !!r.rated_id,
+    })),
+  });
 });
 
 export default ratings;

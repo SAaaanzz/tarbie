@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import { navigate } from '../lib/router';
 import {
-  ArrowLeft, CheckCircle2, Circle, PlayCircle, Loader2, ChevronLeft, ChevronRight,
+  ArrowLeft, CheckCircle2, Circle, Loader2, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import type { Lang } from '@tarbie/shared';
 
@@ -114,15 +114,6 @@ export function LessonPage({ courseId, lessonId }: { courseId: string; lessonId:
             ) : (
               <video src={lesson.video_url} controls className="h-full w-full" />
             )}
-          </div>
-        )}
-
-        {lesson.type === 'live' && (
-          <div className="aspect-video bg-gray-900 flex items-center justify-center">
-            <div className="text-center text-white space-y-2">
-              <PlayCircle size={48} className="mx-auto opacity-50" />
-              <p className="text-sm opacity-70">{t(lang, 'Тікелей эфир', 'Прямой эфир')}</p>
-            </div>
           </div>
         )}
 

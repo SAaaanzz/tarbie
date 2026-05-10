@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { signJwt } from '../lib/jwt.js';
 import { createUserSchema, createClassSchema, generateId, nowISO, ERROR_CODES } from '@tarbie/shared';
 
 const admin = new Hono<HonoEnv>();
@@ -10,7 +11,7 @@ admin.use('*', authMiddleware, requireRole('admin'));
 admin.get('/users', async (c) => {
   const user = c.get('user');
   const rows = await c.env.DB.prepare(
-    'SELECT id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at, avatar_url FROM users WHERE school_id = ? ORDER BY full_name'
+    'SELECT id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at, avatar_url, premium, premium_expires_at FROM users WHERE school_id = ? ORDER BY full_name'
   ).bind(user.school_id).all();
   return c.json({ success: true, data: rows.results });
 });
@@ -869,6 +870,31 @@ admin.put('/settings/support-chat', async (c) => {
   }
   await c.env.KV.put('support_admin_chat_id', body.chat_id.trim());
   return c.json({ success: true, data: { chat_id: body.chat_id.trim() } });
+});
+
+// ── Test token: generate JWT for any user (admin-only, for testing) ──
+admin.post('/test-token', async (c) => {
+  const body = await c.req.json() as { user_id: string };
+  if (!body.user_id) {
+    return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'user_id required' }, 400);
+  }
+
+  const adminUser = c.get('user');
+  const targetUser = await c.env.DB.prepare(
+    'SELECT id, role, school_id FROM users WHERE id = ? AND school_id = ?'
+  ).bind(body.user_id, adminUser.school_id).first<{ id: string; role: string; school_id: string }>();
+
+  if (!targetUser) {
+    return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'User not found' }, 404);
+  }
+
+  const token = await signJwt(
+    { sub: targetUser.id, role: targetUser.role as 'admin' | 'teacher' | 'student' | 'parent', school_id: targetUser.school_id },
+    c.env.JWT_SECRET,
+    3600
+  );
+
+  return c.json({ success: true, data: { token, user_id: targetUser.id, role: targetUser.role } });
 });
 
 export default admin;

@@ -31,6 +31,7 @@ export interface User {
   lang: Lang;
   avatar_url: string | null;
   premium: number;
+  premium_expires_at: string | null;
   premium_frame: string | null;
   premium_name_color: string | null;
   created_at: string;
@@ -164,6 +165,7 @@ export interface SessionRating {
   reason: string | null;
   is_valid: number;
   filter_reason: string | null;
+  is_anonymous: boolean;
   created_at: string;
 }
 
@@ -173,11 +175,11 @@ export interface TeacherRatingStats {
   total_ratings: number;
   valid_ratings: number;
   average_rating: number;
-  recent_reviews: { rating: number; reason: string; created_at: string; student_name: string }[];
+  recent_reviews: { rating: number; reason: string; created_at: string; is_anonymous: boolean; student_name: string | null; student_avatar_url: string | null }[];
 }
 
 export type CourseStatus = 'draft' | 'published' | 'archived';
-export type LessonType = 'video' | 'text' | 'live';
+export type LessonType = 'video' | 'text';
 export type EnrollmentStatus = 'active' | 'completed' | 'cancelled';
 export type LessonProgressStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -229,6 +231,8 @@ export interface Lesson {
   type: LessonType;
   content: string;
   video_url: string | null;
+  file_url: string | null;
+  file_name: string | null;
   duration_minutes: number;
   sort_order: number;
   created_at: string;

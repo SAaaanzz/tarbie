@@ -20,9 +20,10 @@ import { LessonPage } from './pages/LessonPage';
 import { MyCoursesPage } from './pages/MyCoursesPage';
 import { CourseBuilderPage } from './pages/CourseBuilderPage';
 import { TestRunnerPage } from './pages/TestRunnerPage';
+import { StudentReviewPage } from './pages/StudentReviewPage';
 import { api } from './lib/api';
 import { subscribe, getPath, getSearchParam } from './lib/router';
-import { GraduationCap, Plus, Loader2, Users, UserPlus, BookOpen, Trash2, X, Eye, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Search, Download, Edit3 } from 'lucide-react';
+import { GraduationCap, Plus, Loader2, Users, UserPlus, BookOpen, Trash2, X, Eye, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Search, Download, Edit3, Crown } from 'lucide-react';
 import { Avatar } from './components/Avatar';
 import type { Lang } from '@tarbie/shared';
 import './index.css';
@@ -34,6 +35,20 @@ function AccessDenied() {
       <AlertTriangle size={40} className="mb-3 text-amber-400" />
       <p className="text-lg font-semibold">{lang === 'kz' ? 'Қол жетімсіз' : 'Нет доступа'}</p>
       <p className="mt-1 text-sm">{lang === 'kz' ? 'Бұл бетке кіру құқығыңыз жоқ' : 'У вас нет доступа к этой странице'}</p>
+    </div>
+  );
+}
+
+function PremiumRequired() {
+  const { lang } = useAuthStore();
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+      <Crown size={40} className="mb-3 text-amber-400" />
+      <p className="text-lg font-semibold">Premium</p>
+      <p className="mt-1 text-sm text-center">{lang === 'kz' ? 'Бұл мүмкіндік Premium жазылымда қолжетімді' : 'Эта функция доступна в Premium-подписке'}</p>
+      <a href="/profile" className="mt-4 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-6 py-2 text-sm font-bold text-white hover:shadow-md transition-shadow">
+        {lang === 'kz' ? 'Premium сатып алу' : 'Купить Premium'}
+      </a>
     </div>
   );
 }
@@ -79,9 +94,11 @@ function Router({ path }: { path: string }) {
     case '/support':
       return <SupportPage />;
     case '/assistant':
-      return hasRole('admin', 'teacher') ? <AssistantPage /> : <AccessDenied />;
+      return hasRole('admin', 'teacher') ? (user?.premium ? <AssistantPage /> : <PremiumRequired />) : <AccessDenied />;
     case '/ratings':
       return hasRole('admin') ? <TeacherRatingsPage /> : <AccessDenied />;
+    case '/reviews':
+      return hasRole('student') ? <StudentReviewPage /> : <AccessDenied />;
     case '/courses':
       return hasRole('admin', 'teacher', 'student') ? <CourseCatalogPage /> : <AccessDenied />;
     case '/courses/builder':
@@ -145,6 +162,8 @@ interface UserRow {
   lang: string;
   created_at: string;
   avatar_url?: string | null;
+  premium?: number;
+  premium_expires_at?: string | null;
 }
 
 function roleLabel(role: string, lang: Lang) {
@@ -307,6 +326,14 @@ function AdminUsersPage() {
                       title={lang === 'kz' ? 'Өңдеу' : 'Редактировать'}>
                       <Edit3 size={15} />
                     </button>
+                    {u.premium ? (
+                      <button
+                        onClick={() => { if (confirm(lang === 'kz' ? 'Premium жоюға сенімдісіз бе?' : 'Отозвать Premium?')) { api.delete(`/api/premium/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
+                        className="rounded p-1 text-amber-500 hover:bg-amber-50 hover:text-amber-700"
+                        title={lang === 'kz' ? 'Premium жою' : 'Отозвать Premium'}>
+                        <Crown size={15} />
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => { if (confirm(lang === 'kz' ? 'Жоюға сенімдісіз бе?' : 'Удалить пользователя?')) { api.delete(`/api/admin/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
                       className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"

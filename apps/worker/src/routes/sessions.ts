@@ -304,10 +304,14 @@ sessions.patch('/:id/complete', requireRole('admin', 'teacher'), async (c) => {
     "SELECT id FROM users WHERE school_id = ? AND role = 'admin'"
   ).bind(user.school_id).all<{ id: string }>();
 
+  const classStudents = await c.env.DB.prepare(
+    'SELECT student_id FROM class_students WHERE class_id = ?'
+  ).bind(existing.class_id).all<{ student_id: string }>();
+
   const queueMsg: QueueMessage = {
     event_type: 'SESSION_COMPLETED',
     session_id: sessionId,
-    user_ids: admins.results.map(a => a.id),
+    user_ids: [...admins.results.map(a => a.id), ...classStudents.results.map(s => s.student_id)],
     template_vars: {
       topic: existing.topic,
       class_name: existing.class_name,

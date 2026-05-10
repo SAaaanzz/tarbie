@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { Avatar } from '../components/Avatar';
 import {
   MessageCircle, Plus, Send, Loader2, ArrowLeft,
-  Clock, CheckCircle, AlertCircle, ChevronRight,
+  Clock, CheckCircle, AlertCircle, ChevronRight, Paperclip,
 } from 'lucide-react';
 
 interface Ticket {
@@ -25,6 +25,8 @@ interface Message {
   sender_name: string;
   is_admin: number;
   message: string;
+  file_url: string | null;
+  file_name: string | null;
   created_at: string;
 }
 
@@ -105,6 +107,8 @@ export function SupportPage() {
         sender_name: user?.full_name ?? '',
         is_admin: 0,
         message: newMsg.trim(),
+        file_url: null,
+        file_name: null,
         created_at: new Date().toISOString(),
       }]);
       setNewMsg('');
@@ -259,6 +263,12 @@ export function SupportPage() {
                     {m.is_admin ? (lang === 'kz' ? 'Қолдау' : 'Поддержка') : m.sender_name}
                   </p>
                   <p className="text-sm whitespace-pre-wrap">{m.message}</p>
+                  {m.file_url && (
+                    <a href={`https://dprabota.bahtyarsanzhar.workers.dev${m.file_url}`} target="_blank" rel="noopener"
+                      className={`flex items-center gap-1 mt-1 text-xs ${m.is_admin ? 'text-blue-600' : 'text-primary-100 underline'}`}>
+                      <Paperclip size={12} /> {m.file_name || 'File'}
+                    </a>
+                  )}
                   <p className={`text-[9px] mt-1 ${m.is_admin ? 'text-gray-400' : 'text-primary-200'}`}>
                     {formatDate(m.created_at)}
                   </p>
@@ -271,6 +281,37 @@ export function SupportPage() {
           {/* Input */}
           {activeTicket.status !== 'closed' && (
             <div className="border-t border-gray-100 p-3 flex gap-2">
+              <label className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer shrink-0" title={lang === 'kz' ? 'Файл тіркеу (10 MB)' : 'Прикрепить файл (10 MB)'}>
+                <Paperclip size={16} className="text-gray-400" />
+                <input type="file" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file || !activeTicket) return;
+                  if (file.size > 10 * 1024 * 1024) { alert(lang === 'kz' ? 'Файл 10 MB-дан аспауы керек' : 'Файл не должен превышать 10 MB'); return; }
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  try {
+                    const res = await fetch(
+                      `https://dprabota.bahtyarsanzhar.workers.dev/api/support/tickets/${activeTicket.id}/upload`,
+                      { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('tarbie-auth') ? JSON.parse(localStorage.getItem('tarbie-auth')!).state?.token : ''}` }, body: formData }
+                    );
+                    const json = await res.json() as { success: boolean; data?: { file_url: string; file_name: string; message_id: string } };
+                    if (json.success && json.data) {
+                      setMessages(prev => [...prev, {
+                        id: json.data!.message_id,
+                        ticket_id: activeTicket.id,
+                        sender_id: user?.id ?? '',
+                        sender_name: user?.full_name ?? '',
+                        is_admin: 0,
+                        message: `📎 ${json.data!.file_name}`,
+                        file_url: json.data!.file_url,
+                        file_name: json.data!.file_name,
+                        created_at: new Date().toISOString(),
+                      }]);
+                    }
+                  } catch { }
+                  e.target.value = '';
+                }} />
+              </label>
               <input
                 type="text"
                 className="input-field flex-1 text-sm"

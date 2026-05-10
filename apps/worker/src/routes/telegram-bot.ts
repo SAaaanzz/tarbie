@@ -60,6 +60,13 @@ async function handleMessage(msg: TgMessage, env: Env, token: string) {
   if (text === '/login') return handleLoginCmd(chatId, env, token);
   if (text === '/rate') return handleRateCmd(chatId, env, token);
   if (text === '/faq') { const l = await getLang(chatId, env); return sendFAQ(chatId, l, token); }
+  // Block manual phone number input — require contact button
+  if (/^\+?[78]\d{10}$/.test(text.replace(/[\s\-()]/g, ''))) {
+    const l = await getLang(chatId, env);
+    const k = l === 'kz';
+    return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '⚠️ Қауіпсіздік үшін нөмірді қолмен жіберу мүмкін емес.\n\nТөмендегі батырманы басыңыз:' : '⚠️ Для безопасности нельзя привязать номер вручную.\n\nНажмите кнопку ниже:',
+      reply_markup: { keyboard: [[{ text: k ? '📱 Менің нөмірімді жіберу' : '📱 Отправить мой номер', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+  }
   const lang = await getLang(chatId, env);
   return sendMainMenu(chatId, lang, token);
 }
@@ -115,6 +122,17 @@ async function handleCallback(cb: TgCallbackQuery, env: Env, token: string) {
     return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '⭐ Сабаққа баға беріңіз (1-ден 10-ға дейін):' : '⭐ Оцените занятие (от 1 до 10):' });
   }
 
+  // Rating: anonymous choice
+  if (d.startsWith('rate_anon:')) {
+    const isAnon = d === 'rate_anon:yes';
+    const flowData = await env.KV.get(`bot_flow:${chatId}`);
+    if (!flowData) return tg(token, 'sendMessage', { chat_id: chatId, text: '❌ Session expired' });
+    const flow: FlowState = JSON.parse(flowData);
+    if (flow.step !== 'rate_anon' || !flow.sessionId || !flow.rating) return tg(token, 'sendMessage', { chat_id: chatId, text: '❌ Error' });
+    await env.KV.delete(`bot_flow:${chatId}`);
+    return submitRating(chatId, flow.sessionId, flow.rating, flow.message ?? null, isAnon, env, token, lang);
+  }
+
   // Admin ticket actions
   if (d.startsWith('reply:')) {
     const tid = d.split(':')[1]!;
@@ -138,7 +156,7 @@ async function handleCallback(cb: TgCallbackQuery, env: Env, token: string) {
 // ══════════════════════════════════════════════
 // FLOW STATE MACHINE
 // ══════════════════════════════════════════════
-interface FlowState { step: string; type?: string; fio?: string; phone?: string; subject?: string; message?: string; ticketId?: string; sessionId?: string; rating?: number; }
+interface FlowState { step: string; type?: string; fio?: string; phone?: string; subject?: string; message?: string; ticketId?: string; sessionId?: string; rating?: number; isAnonymous?: boolean; }
 
 async function handleFlow(chatId: number, text: string, flow: FlowState, env: Env, token: string) {
   const lang = await getLang(chatId, env);
@@ -157,11 +175,23 @@ async function handleFlow(chatId: number, text: string, flow: FlowState, env: En
     return tg(token, 'sendMessage', { chat_id: chatId, text: k ? `📝 Сіз <b>${score}/10</b> қойдыңыз.\n\nНеге осындай баға? (немесе /skip):` : `📝 Вы поставили <b>${score}/10</b>.\n\nПочему такая оценка? (или /skip):`, parse_mode: 'HTML' });
   }
 
-  // Rating: reason
+  // Rating: reason → ask anonymous
   if (flow.step === 'rate_reason' && flow.sessionId && flow.rating) {
-    await env.KV.delete(`bot_flow:${chatId}`);
     const reason = text === '/skip' ? null : text;
-    return submitRating(chatId, flow.sessionId, flow.rating, reason, env, token, lang);
+    flow.step = 'rate_anon';
+    flow.message = reason ?? undefined;
+    await env.KV.put(`bot_flow:${chatId}`, JSON.stringify(flow), { expirationTtl: 600 });
+    return tg(token, 'sendMessage', {
+      chat_id: chatId,
+      text: k
+        ? '🕶 <b>Анонимді бағалау</b>\n\nАнонимді болса — бағаңыз бен пікіріңіз көрінеді, бірақ атыңыз жасырылады.'
+        : '🕶 <b>Анонимный отзыв</b>\n\nВаша оценка и комментарий будут видны, но ваше имя будет скрыто.',
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [
+        [{ text: k ? '🕶 Анонимді (атым жасырын)' : '🕶 Анонимно (имя скрыто)', callback_data: 'rate_anon:yes' }],
+        [{ text: k ? '👁 Ашық (атым көрінеді)' : '👁 Открыто (имя видно)', callback_data: 'rate_anon:no' }],
+      ] },
+    });
   }
 
   // Ticket: FIO
@@ -365,7 +395,7 @@ async function handleRateCmd(chatId: number, env: Env, token: string) {
   return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '⭐ <b>Сабаққа баға беру</b>\n\nТаңдаңыз:' : '⭐ <b>Оценить занятие</b>\n\nВыберите:', parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
 }
 
-async function submitRating(chatId: number, sessionId: string, rating: number, reason: string | null, env: Env, token: string, lang: string) {
+async function submitRating(chatId: number, sessionId: string, rating: number, reason: string | null, isAnonymous: boolean, env: Env, token: string, lang: string) {
   const k = lang === 'kz';
   const user = await env.DB.prepare('SELECT id FROM users WHERE telegram_chat_id = ?').bind(String(chatId)).first<{ id: string }>();
   if (!user) return tg(token, 'sendMessage', { chat_id: chatId, text: '❌ Error' });
@@ -386,15 +416,16 @@ async function submitRating(chatId: number, sessionId: string, rating: number, r
 
   const id = generateId();
   await env.DB.prepare(
-    'INSERT INTO session_ratings (id, session_id, student_id, teacher_id, rating, reason, is_valid, filter_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, sessionId, user.id, session.teacher_id, rating, reason, isValid, filterReason, nowISO()).run();
+    'INSERT INTO session_ratings (id, session_id, student_id, teacher_id, rating, reason, is_valid, filter_reason, is_anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, sessionId, user.id, session.teacher_id, rating, reason, isValid, filterReason, isAnonymous ? 1 : 0, nowISO()).run();
 
+  const anonLabel = isAnonymous ? (k ? ' 🕶' : ' 🕶') : '';
   const emoji = rating >= 8 ? '🌟' : rating >= 5 ? '👍' : '😔';
   return tg(token, 'sendMessage', {
     chat_id: chatId,
     text: k
-      ? `${emoji} Рахмет! Сіз <b>${rating}/10</b> қойдыңыз.${reason ? '\n\n💬 ' + esc(reason) : ''}\n\nБағаңыз қабылданды ✅`
-      : `${emoji} Спасибо! Вы поставили <b>${rating}/10</b>.${reason ? '\n\n💬 ' + esc(reason) : ''}\n\nОценка принята ✅`,
+      ? `${emoji} Рахмет! Сіз <b>${rating}/10</b> қойдыңыз.${anonLabel}${reason ? '\n\n💬 ' + esc(reason) : ''}\n\nБағаңыз қабылданды ✅`
+      : `${emoji} Спасибо! Вы поставили <b>${rating}/10</b>.${anonLabel}${reason ? '\n\n💬 ' + esc(reason) : ''}\n\nОценка принята ✅`,
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: [[{ text: k ? '◀️ Мәзір' : '◀️ Меню', callback_data: 'back:menu' }]] },
   });
@@ -424,6 +455,34 @@ export async function sendRatingRequest(sessionId: string, topic: string, env: E
       reply_markup: { inline_keyboard: [[{ text: k ? '⭐ Бағалау' : '⭐ Оценить', callback_data: `rate_session:${sessionId}` }]] },
     });
   }
+}
+
+// Send grade/comment notification to a student via Telegram
+export async function sendGradeNotification(
+  studentId: string, topic: string, grade: number | null, comment: string | null, status: string, env: Env, token: string
+) {
+  const student = await env.DB.prepare(
+    'SELECT telegram_chat_id, lang FROM users WHERE id = ? AND telegram_chat_id IS NOT NULL'
+  ).bind(studentId).first<{ telegram_chat_id: string; lang: string }>();
+  if (!student) return;
+
+  const k = student.lang === 'kz';
+  const statusText = status === 'present' ? (k ? 'Қатысты ✅' : 'Присутствовал(а) ✅') :
+    status === 'makeup' ? (k ? 'Отработка 🔄' : 'Отработка 🔄') :
+    (k ? 'Келмеді ❌' : 'Отсутствовал(а) ❌');
+
+  let text = k
+    ? `📊 <b>Баға қойылды!</b>\n\n📋 Тақырып: ${esc(topic)}\n📌 Статус: ${statusText}`
+    : `📊 <b>Оценка выставлена!</b>\n\n📋 Тема: ${esc(topic)}\n📌 Статус: ${statusText}`;
+
+  if (grade !== null) {
+    text += k ? `\n⭐ Баға: <b>${grade}/100</b>` : `\n⭐ Оценка: <b>${grade}/100</b>`;
+  }
+  if (comment) {
+    text += `\n💬 ${k ? 'Пікір' : 'Комментарий'}: ${esc(comment)}`;
+  }
+
+  await tg(token, 'sendMessage', { chat_id: student.telegram_chat_id, text, parse_mode: 'HTML' });
 }
 
 // ══════════════════════════════════════════════
@@ -542,12 +601,34 @@ async function saveAdminReply(chatId: number, ticketId: string, message: string,
 // ══════════════════════════════════════════════
 async function handleContact(msg: TgMessage, env: Env, token: string) {
   const chatId = msg.chat.id;
+  const lang = await getLang(chatId, env);
+  const k = lang === 'kz';
+
+  // Security: only allow sharing own contact (button "Send my number")
+  if (msg.contact!.user_id && msg.contact!.user_id !== msg.from.id) {
+    return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '⚠️ Тек өз нөміріңізді жіберіңіз. Төмендегі батырманы басыңыз.' : '⚠️ Отправьте свой номер. Нажмите кнопку «📱 Отправить мой номер».',
+      reply_markup: { keyboard: [[{ text: k ? '📱 Менің нөмірімді жіберу' : '📱 Отправить мой номер', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+  }
+
+  // Prevent re-registration: if this chat is already linked, reject
+  const alreadyLinked = await env.DB.prepare('SELECT id, full_name FROM users WHERE telegram_chat_id = ?').bind(String(chatId)).first<{ id: string; full_name: string }>();
+  if (alreadyLinked) {
+    return tg(token, 'sendMessage', { chat_id: chatId, text: k ? `✅ Сіз бұрыннан тіркелгенсіз: ${alreadyLinked.full_name}` : `✅ Вы уже привязаны: ${alreadyLinked.full_name}`, reply_markup: { inline_keyboard: [[{ text: k ? '📋 Мәзір' : '📋 Меню', callback_data: 'back:menu' }]] } });
+  }
+
   const phone = msg.contact!.phone_number.startsWith('+') ? msg.contact!.phone_number : `+${msg.contact!.phone_number}`;
   const user = await env.DB.prepare('SELECT id, full_name, lang FROM users WHERE phone = ?').bind(phone).first<{ id: string; full_name: string; lang: string }>();
-  if (!user) { const l = await getLang(chatId, env); return tg(token, 'sendMessage', { chat_id: chatId, text: l === 'kz' ? '❌ Нөмір жүйеде табылмады' : '❌ Номер не найден в системе' }); }
+  if (!user) { return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '❌ Нөмір жүйеде табылмады' : '❌ Номер не найден в системе' }); }
+
+  // Check if this phone is already linked to another Telegram
+  const phoneLinked = await env.DB.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').bind(user.id).first<{ telegram_chat_id: string | null }>();
+  if (phoneLinked?.telegram_chat_id && phoneLinked.telegram_chat_id !== String(chatId)) {
+    return tg(token, 'sendMessage', { chat_id: chatId, text: k ? '⚠️ Бұл нөмір басқа Telegram-ға байланысты.' : '⚠️ Этот номер уже привязан к другому Telegram.' });
+  }
+
   await env.DB.prepare('UPDATE users SET telegram_chat_id = ? WHERE id = ?').bind(String(chatId), user.id).run();
-  const k = user.lang === 'kz';
-  return tg(token, 'sendMessage', { chat_id: chatId, text: k ? `✅ Telegram байланыстырылды!\n\n👤 ${user.full_name}` : `✅ Telegram привязан!\n\n👤 ${user.full_name}`, reply_markup: { inline_keyboard: [[{ text: k ? '📋 Мәзір' : '📋 Меню', callback_data: 'back:menu' }]] } });
+  const uk = user.lang === 'kz';
+  return tg(token, 'sendMessage', { chat_id: chatId, text: uk ? `✅ Telegram байланыстырылды!\n\n👤 ${user.full_name}` : `✅ Telegram привязан!\n\n👤 ${user.full_name}`, reply_markup: { inline_keyboard: [[{ text: uk ? '📋 Мәзір' : '📋 Меню', callback_data: 'back:menu' }]] } });
 }
 
 async function handleLoginCmd(chatId: number, env: Env, token: string) {

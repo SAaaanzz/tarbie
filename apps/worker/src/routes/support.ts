@@ -4,6 +4,8 @@ import { authMiddleware } from '../middleware/auth.js';
 import { generateId, nowISO, ERROR_CODES } from '@tarbie/shared';
 import { forwardTicketToAdmin, forwardMessageToAdmin } from './telegram-bot.js';
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 const support = new Hono<HonoEnv>();
 
 support.use('*', authMiddleware);
@@ -207,6 +209,73 @@ support.post('/phone-change/verify', async (c) => {
   await c.env.KV.delete(`phone_change:${user.id}`);
 
   return c.json({ success: true, data: { phone: data.new_phone } });
+});
+
+// ── File upload for support messages (max 10MB) ──
+support.post('/tickets/:id/upload', async (c) => {
+  const user = c.get('user');
+  const ticketId = c.req.param('id');
+
+  const ticket = await c.env.DB.prepare(
+    'SELECT * FROM support_tickets WHERE id = ? AND user_id = ?'
+  ).bind(ticketId, user.id).first();
+  if (!ticket) return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'Ticket not found' }, 404);
+
+  const contentType = c.req.header('content-type') ?? '';
+  let fileData: ArrayBuffer;
+  let fileName: string;
+  let fileMime: string;
+
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File | null;
+    if (!file) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'No file provided' }, 400);
+    if (file.size > MAX_FILE_SIZE) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'File too large (max 10MB)' }, 400);
+    fileData = await file.arrayBuffer();
+    fileName = file.name;
+    fileMime = file.type || 'application/octet-stream';
+  } else {
+    const body = await c.req.json() as { name: string; data: string; mime?: string };
+    if (!body.name || !body.data) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'name and data (base64) required' }, 400);
+    const raw = Uint8Array.from(atob(body.data), ch => ch.charCodeAt(0));
+    if (raw.length > MAX_FILE_SIZE) return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'File too large (max 10MB)' }, 400);
+    fileData = raw.buffer;
+    fileName = body.name;
+    fileMime = body.mime || 'application/octet-stream';
+  }
+
+  const fileId = generateId();
+  const kvKey = `file:${fileId}`;
+  await c.env.KV.put(kvKey, fileData, { metadata: { name: fileName, mime: fileMime, ticketId, uploadedBy: user.id, uploadedAt: nowISO() } });
+
+  const fileUrl = `/api/support/files/${fileId}`;
+  // Also add as a message with file reference
+  const messageId = generateId();
+  const now = nowISO();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      'INSERT INTO support_messages (id, ticket_id, sender_id, is_admin, message, file_url, file_name, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?)'
+    ).bind(messageId, ticketId, user.id, `📎 ${fileName}`, fileUrl, fileName, now),
+    c.env.DB.prepare('UPDATE support_tickets SET updated_at = ? WHERE id = ?').bind(now, ticketId),
+  ]);
+
+  return c.json({ success: true, data: { file_id: fileId, file_url: fileUrl, file_name: fileName, message_id: messageId } });
+});
+
+// ── Serve support file ──
+support.get('/files/:fileId', async (c) => {
+  const fileId = c.req.param('fileId');
+  const kvKey = `file:${fileId}`;
+  const { value, metadata } = await c.env.KV.getWithMetadata<{ name: string; mime: string }>(kvKey, 'arrayBuffer');
+  if (!value || !metadata) return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'File not found' }, 404);
+
+  return new Response(value as ArrayBuffer, {
+    headers: {
+      'Content-Type': metadata.mime,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(metadata.name)}"`,
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
 });
 
 export default support;

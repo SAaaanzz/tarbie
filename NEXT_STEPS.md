@@ -30,7 +30,6 @@ npx wrangler secret put OTP_SECRET
 2. Отправьте команду: `/newbot`
 3. Введите имя бота (например: `Tarbie Sagaty Manager`)
 4. Введите username бота (например: `TarbieSagatyBot`)
-5. Сохраните полученный токен (формат: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
 
 ### 3. Настроить секреты для Bot Worker
 
@@ -69,9 +68,7 @@ npx wrangler deploy
 ✅ **УЖЕ ВЫПОЛНЕНО!** Webhook настроен на `https://tarbie-bot.bahtyarsanzhar.workers.dev/telegram/webhook`
 
 Для справки, команда PowerShell:
-```powershell
-Invoke-RestMethod -Uri "https://api.telegram.org/bot8731605900:AAGmbwo0EyIgY3F7nE3xUkBcHMySYZYhwso/setWebhook" -Method Post -ContentType "application/json" -Body '{"url": "https://tarbie-bot.bahtyarsanzhar.workers.dev/telegram/webhook", "secret_token": "Sacosako0999"}'
-```
+
 
 ### 6. Деплой Frontend
 

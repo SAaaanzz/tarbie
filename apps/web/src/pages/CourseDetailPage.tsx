@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import { navigate } from '../lib/router';
 import {
-  ArrowLeft, BookOpen, Star, Clock, Play, FileText, Video,
+  ArrowLeft, BookOpen, Star, Clock, FileText, Video,
   ChevronDown, ChevronUp, Loader2, Send,
 } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
@@ -68,7 +68,6 @@ const t = (lang: Lang, kz: string, ru: string) => lang === 'kz' ? kz : ru;
 
 function lessonIcon(type: string) {
   if (type === 'video') return <Video size={16} className="text-blue-500" />;
-  if (type === 'live') return <Play size={16} className="text-red-500" />;
   return <FileText size={16} className="text-gray-500" />;
 }
 
