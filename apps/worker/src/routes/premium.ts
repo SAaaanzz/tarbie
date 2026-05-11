@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
-import { nowISO, structuredLog } from '@tarbie/shared';
+import { structuredLog } from '@tarbie/shared';
 
 const premium = new Hono<HonoEnv>();
 
@@ -34,8 +34,8 @@ premium.post('/activate', async (c) => {
   }
 
   await c.env.DB.prepare(
-    'UPDATE users SET premium = 1, premium_expires_at = ?, updated_at = ? WHERE id = ?'
-  ).bind(expiresAtStr, nowISO(), user.id).run();
+    'UPDATE users SET premium = 1, premium_expires_at = ? WHERE id = ?'
+  ).bind(expiresAtStr, user.id).run();
 
   structuredLog('info', 'Premium activated', { user_id: user.id, phone: body.phone, expires_at: expiresAtStr });
 
@@ -90,8 +90,8 @@ premium.delete('/users/:userId', authMiddleware, requireRole('admin'), async (c)
   }
 
   await c.env.DB.prepare(
-    'UPDATE users SET premium = 0, premium_expires_at = NULL, updated_at = ? WHERE id = ?'
-  ).bind(nowISO(), targetUserId).run();
+    'UPDATE users SET premium = 0, premium_expires_at = NULL WHERE id = ?'
+  ).bind(targetUserId).run();
 
   structuredLog('info', 'Premium revoked by admin', { admin_id: authUser.id, target_user_id: targetUserId });
 
