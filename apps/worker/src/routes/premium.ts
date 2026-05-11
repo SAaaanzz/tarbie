@@ -45,6 +45,31 @@ premium.post('/activate', async (c) => {
   });
 });
 
+// ── Phone lookup: find user by phone (for myavka-donate) ──
+// POST /api/premium/lookup { phone }
+// Auth: X-Premium-Secret header
+premium.post('/lookup', async (c) => {
+  const secret = c.req.header('x-premium-secret');
+  if (!secret || secret !== c.env.PREMIUM_SECRET) {
+    return c.json({ success: false, message: 'Unauthorized' }, 401);
+  }
+
+  const body = await c.req.json() as { phone?: string };
+  if (!body.phone) {
+    return c.json({ success: false, message: 'phone is required' }, 400);
+  }
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, full_name, role FROM users WHERE phone = ?'
+  ).bind(body.phone).first<{ id: string; full_name: string; role: string }>();
+
+  if (!user) {
+    return c.json({ success: false, message: 'User not found' }, 404);
+  }
+
+  return c.json({ success: true, data: { full_name: user.full_name, role: user.role } });
+});
+
 // ── Check premium status (authenticated) ──
 premium.get('/status', authMiddleware, async (c) => {
   const authUser = c.get('user');

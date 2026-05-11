@@ -80,9 +80,9 @@ function Router({ path }: { path: string }) {
     case '/settings':
       return <SettingsPage />;
     case '/admin/users':
-      return hasRole('admin') ? <AdminUsersPage /> : <AccessDenied />;
+      return hasRole('admin', 'teacher') ? <AdminUsersPage /> : <AccessDenied />;
     case '/admin/classes':
-      return hasRole('admin') ? <AdminClassesPage /> : <AccessDenied />;
+      return hasRole('admin', 'teacher') ? <AdminClassesPage /> : <AccessDenied />;
     case '/grades':
       return hasRole('admin', 'teacher', 'student') ? <GradesPage /> : <AccessDenied />;
     case '/events':
@@ -176,8 +176,15 @@ function roleLabel(role: string, lang: Lang) {
   return map[role]?.[lang] ?? role;
 }
 
+function useApiBase() {
+  const { user } = useAuthStore();
+  return user?.role === 'teacher' ? '/api/teacher' : '/api/admin';
+}
+
 function AdminUsersPage() {
-  const { lang } = useAuthStore();
+  const { lang, user: authUser } = useAuthStore();
+  const apiBase = useApiBase();
+  const isTeacher = authUser?.role === 'teacher';
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -188,13 +195,13 @@ function AdminUsersPage() {
 
   const loadUsers = () => {
     setLoading(true);
-    api.get<UserRow[]>('/api/admin/users')
+    api.get<UserRow[]>(`${apiBase}/users`)
       .then((res) => { setUsers(Array.isArray(res) ? res : []); })
       .catch(() => setUsers([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); }, [apiBase]);
 
   const filtered = users.filter(u => {
     if (roleFilter !== 'all' && u.role !== roleFilter) return false;
@@ -335,7 +342,7 @@ function AdminUsersPage() {
                       </button>
                     ) : null}
                     <button
-                      onClick={() => { if (confirm(lang === 'kz' ? 'Жоюға сенімдісіз бе?' : 'Удалить пользователя?')) { api.delete(`/api/admin/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
+                      onClick={() => { if (confirm(lang === 'kz' ? 'Жоюға сенімдісіз бе?' : 'Удалить пользователя?')) { api.delete(`${apiBase}/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
                       className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
                       title={lang === 'kz' ? 'Жою' : 'Удалить'}>
                       <Trash2 size={15} />
@@ -395,7 +402,7 @@ function AdminUsersPage() {
                   {lang === 'kz' ? 'Өңдеу' : 'Ред.'}
                 </button>
                 <button
-                  onClick={() => { if (confirm(lang === 'kz' ? 'Жоюға сенімдісіз бе?' : 'Удалить пользователя?')) { api.delete(`/api/admin/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
+                  onClick={() => { if (confirm(lang === 'kz' ? 'Жоюға сенімдісіз бе?' : 'Удалить пользователя?')) { api.delete(`${apiBase}/users/${u.id}`).then(loadUsers).catch(() => {}); } }}
                   className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors ml-auto">
                   <Trash2 size={13} />
                   {lang === 'kz' ? 'Жою' : 'Удалить'}
@@ -409,6 +416,8 @@ function AdminUsersPage() {
       {showForm && (
         <CreateUserModal
           lang={lang}
+          apiBase={apiBase}
+          isTeacher={isTeacher}
           onClose={() => setShowForm(false)}
           onCreated={() => { setShowForm(false); loadUsers(); }}
         />
@@ -416,6 +425,8 @@ function AdminUsersPage() {
       {editUser && (
         <EditUserModal
           lang={lang}
+          apiBase={apiBase}
+          isTeacher={isTeacher}
           user={editUser}
           onClose={() => setEditUser(null)}
           onSaved={() => { setEditUser(null); loadUsers(); }}
@@ -424,6 +435,8 @@ function AdminUsersPage() {
       {showBulkImport && (
         <BulkImportModal
           lang={lang}
+          apiBase={apiBase}
+          isTeacher={isTeacher}
           onClose={() => setShowBulkImport(false)}
           onDone={() => { setShowBulkImport(false); loadUsers(); }}
         />
@@ -432,12 +445,12 @@ function AdminUsersPage() {
   );
 }
 
-function CreateUserModal({ lang, onClose, onCreated }: {
-  lang: Lang; onClose: () => void; onCreated: () => void;
+function CreateUserModal({ lang, apiBase, isTeacher, onClose, onCreated }: {
+  lang: Lang; apiBase: string; isTeacher: boolean; onClose: () => void; onCreated: () => void;
 }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('+7');
-  const [role, setRole] = useState<string>('teacher');
+  const [role, setRole] = useState<string>(isTeacher ? 'student' : 'teacher');
   const [userLang, setUserLang] = useState<string>('ru');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -447,7 +460,7 @@ function CreateUserModal({ lang, onClose, onCreated }: {
     setSubmitting(true);
     setError('');
     try {
-      await api.post('/api/admin/users', { full_name: fullName, phone, role, lang: userLang });
+      await api.post(`${apiBase}/users`, { full_name: fullName, phone, role, lang: userLang });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка'));
@@ -486,10 +499,10 @@ function CreateUserModal({ lang, onClose, onCreated }: {
                 {lang === 'kz' ? 'Рөлі' : 'Роль'}
               </label>
               <select className="input-field" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>
+                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
                 <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
                 <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
-                <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>
+                {!isTeacher && <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>}
               </select>
             </div>
             <div>
@@ -508,7 +521,7 @@ function CreateUserModal({ lang, onClose, onCreated }: {
             </button>
             <button type="submit" className="btn-primary" disabled={submitting}>
               {submitting ? <Loader2 size={18} className="animate-spin" /> :
-                lang === 'kz' ? 'Жасау' : 'Создать'}
+                lang === 'kz' ? 'Қосу' : 'Добавить'}
             </button>
           </div>
         </form>
@@ -517,8 +530,8 @@ function CreateUserModal({ lang, onClose, onCreated }: {
   );
 }
 
-function EditUserModal({ lang, user, onClose, onSaved }: {
-  lang: Lang; user: UserRow; onClose: () => void; onSaved: () => void;
+function EditUserModal({ lang, apiBase, isTeacher, user, onClose, onSaved }: {
+  lang: Lang; apiBase: string; isTeacher: boolean; user: UserRow; onClose: () => void; onSaved: () => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
   const [phone, setPhone] = useState(user.phone);
@@ -532,7 +545,7 @@ function EditUserModal({ lang, user, onClose, onSaved }: {
     setSubmitting(true);
     setError('');
     try {
-      await api.put(`/api/admin/users/${user.id}`, { full_name: fullName, phone, role, lang: userLang });
+      await api.put(`${apiBase}/users/${user.id}`, { full_name: fullName, phone, role, lang: userLang });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка'));
@@ -569,10 +582,10 @@ function EditUserModal({ lang, user, onClose, onSaved }: {
                 {lang === 'kz' ? 'Рөлі' : 'Роль'}
               </label>
               <select className="input-field" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>
+                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
                 <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
                 <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
-                <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>
+                {!isTeacher && <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>}
               </select>
             </div>
             <div>
@@ -619,11 +632,11 @@ interface ImportResults {
   students: { log: Array<{ name: string; phone: string; group: string; status: string; message?: string }>; created: number; assigned: number; errors: number; total: number };
 }
 
-function BulkImportModal({ lang, onClose, onDone }: {
-  lang: Lang; onClose: () => void; onDone: () => void;
+function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
+  lang: Lang; apiBase: string; isTeacher: boolean; onClose: () => void; onDone: () => void;
 }) {
   const [step, setStep] = useState<'mode' | 'upload' | 'preview' | 'results'>('mode');
-  const [mode, setMode] = useState<ImportMode>('full');
+  const [mode, setMode] = useState<ImportMode>(isTeacher ? 'simple' : 'full');
   const [entries, setEntries] = useState<ImportEntry[]>([]);
   const [userLang, setUserLang] = useState<string>('ru');
   const [academicYear, setAcademicYear] = useState('2025-2026');
@@ -766,7 +779,7 @@ function BulkImportModal({ lang, onClose, onDone }: {
         }));
 
         if (allEntries.length <= CHUNK_SIZE) {
-          const res = await api.post<ImportResults>('/api/admin/import', {
+          const res = await api.post<ImportResults>(`${apiBase}/import`, {
             entries: allEntries, lang: userLang, academic_year: academicYear,
           });
           setResults(res);
@@ -781,7 +794,7 @@ function BulkImportModal({ lang, onClose, onDone }: {
           for (let i = 0; i < totalChunks; i++) {
             setProgress({ current: i + 1, total: totalChunks });
             const chunk = allEntries.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            const res = await api.post<ImportResults>('/api/admin/import', {
+            const res = await api.post<ImportResults>(`${apiBase}/import`, {
               entries: chunk, lang: userLang, academic_year: academicYear,
             });
             merged.teachers.log.push(...res.teachers.log);
@@ -803,7 +816,7 @@ function BulkImportModal({ lang, onClose, onDone }: {
         const allUsers = validEntries.map(e => ({ full_name: e.student_name, phone: e.student_phone, role: simpleRole, lang: userLang }));
 
         if (allUsers.length <= CHUNK_SIZE) {
-          const res = await api.post<{ results: Array<{ full_name: string; phone: string; status: string; message?: string }>; summary: { total: number; created: number; duplicates: number; errors: number } }>('/api/admin/users/bulk', { users: allUsers });
+          const res = await api.post<{ results: Array<{ full_name: string; phone: string; status: string; message?: string }>; summary: { total: number; created: number; duplicates: number; errors: number } }>(`${apiBase}/users/bulk`, { users: allUsers });
           setSimpleResults(res);
         } else {
           const merged = { results: [] as Array<{ full_name: string; phone: string; status: string; message?: string }>, summary: { total: 0, created: 0, duplicates: 0, errors: 0 } };
@@ -811,7 +824,7 @@ function BulkImportModal({ lang, onClose, onDone }: {
           for (let i = 0; i < totalChunks; i++) {
             setProgress({ current: i + 1, total: totalChunks });
             const chunk = allUsers.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            const res = await api.post<{ results: Array<{ full_name: string; phone: string; status: string; message?: string }>; summary: { total: number; created: number; duplicates: number; errors: number } }>('/api/admin/users/bulk', { users: chunk });
+            const res = await api.post<{ results: Array<{ full_name: string; phone: string; status: string; message?: string }>; summary: { total: number; created: number; duplicates: number; errors: number } }>(`${apiBase}/users/bulk`, { users: chunk });
             merged.results.push(...res.results);
             merged.summary.total += res.summary.total;
             merged.summary.created += res.summary.created;
@@ -976,7 +989,7 @@ function BulkImportModal({ lang, onClose, onDone }: {
                   <label className="mb-1 block text-xs font-medium text-gray-600">{lang === 'kz' ? 'Рөлі' : 'Роль'}</label>
                   <select className="input-field text-sm" value={simpleRole} onChange={(e) => setSimpleRole(e.target.value)}>
                     <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
-                    <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>
+                    {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
                     <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
                   </select>
                 </div>
@@ -1254,7 +1267,9 @@ interface ClassRow {
 }
 
 function AdminClassesPage() {
-  const { lang } = useAuthStore();
+  const { lang, user: authUser } = useAuthStore();
+  const apiBase = useApiBase();
+  const isTeacher = authUser?.role === 'teacher';
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1263,13 +1278,13 @@ function AdminClassesPage() {
 
   const loadClasses = () => {
     setLoading(true);
-    api.get<ClassRow[]>('/api/admin/classes')
+    api.get<ClassRow[]>(`${apiBase}/classes`)
       .then((res) => { setClasses(Array.isArray(res) ? res : []); })
       .catch(() => setClasses([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadClasses(); }, []);
+  useEffect(() => { loadClasses(); }, [apiBase]);
 
   if (loading) {
     return (
@@ -1326,7 +1341,7 @@ function AdminClassesPage() {
                   className="text-xs font-medium text-primary-600 hover:text-primary-700">
                   <Plus size={14} className="inline mr-0.5" />{lang === 'kz' ? 'Қосу' : 'Добавить'}
                 </button>
-                <button onClick={() => { if (confirm(lang === 'kz' ? 'Топты жоюға сенімдісіз бе?' : 'Удалить группу?')) { api.delete(`/api/admin/classes/${c.id}`).then(loadClasses).catch(() => {}); } }}
+                <button onClick={() => { if (confirm(lang === 'kz' ? 'Топты жоюға сенімдісіз бе?' : 'Удалить группу?')) { api.delete(`${apiBase}/classes/${c.id}`).then(loadClasses).catch(() => {}); } }}
                   className="text-xs font-medium text-red-500 hover:text-red-700">
                   <Trash2 size={14} />
                 </button>
@@ -1345,6 +1360,8 @@ function AdminClassesPage() {
       {showForm && (
         <CreateClassModal
           lang={lang}
+          apiBase={apiBase}
+          isTeacher={isTeacher}
           onClose={() => setShowForm(false)}
           onCreated={() => { setShowForm(false); loadClasses(); }}
         />
@@ -1352,6 +1369,7 @@ function AdminClassesPage() {
       {addStudentClassId && (
         <AddStudentsModal
           lang={lang}
+          apiBase={apiBase}
           classId={addStudentClassId}
           onClose={() => setAddStudentClassId(null)}
           onAdded={() => { setAddStudentClassId(null); loadClasses(); }}
@@ -1360,6 +1378,7 @@ function AdminClassesPage() {
       {viewStudentsClassId && (
         <ViewStudentsModal
           lang={lang}
+          apiBase={apiBase}
           classId={viewStudentsClassId}
           onClose={() => setViewStudentsClassId(null)}
           onChanged={() => loadClasses()}
@@ -1369,8 +1388,8 @@ function AdminClassesPage() {
   );
 }
 
-function CreateClassModal({ lang, onClose, onCreated }: {
-  lang: Lang; onClose: () => void; onCreated: () => void;
+function CreateClassModal({ lang, apiBase, isTeacher, onClose, onCreated }: {
+  lang: Lang; apiBase: string; isTeacher: boolean; onClose: () => void; onCreated: () => void;
 }) {
   const [name, setName] = useState('');
   const [teacherId, setTeacherId] = useState('');
@@ -1380,20 +1399,22 @@ function CreateClassModal({ lang, onClose, onCreated }: {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get<UserRow[]>('/api/admin/users')
-      .then((res) => {
-        const data = Array.isArray(res) ? res : [];
-        setTeachers(data.filter((u) => u.role === 'teacher'));
-      })
-      .catch(() => setTeachers([]));
-  }, []);
+    if (!isTeacher) {
+      api.get<UserRow[]>(`${apiBase}/users`)
+        .then((res) => {
+          const data = Array.isArray(res) ? res : [];
+          setTeachers(data.filter((u) => u.role === 'teacher'));
+        })
+        .catch(() => setTeachers([]));
+    }
+  }, [apiBase, isTeacher]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
     try {
-      await api.post('/api/admin/classes', { name, teacher_id: teacherId, academic_year: academicYear });
+      await api.post(`${apiBase}/classes`, { name, ...(isTeacher ? {} : { teacher_id: teacherId }), academic_year: academicYear });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка'));
@@ -1418,6 +1439,7 @@ function CreateClassModal({ lang, onClose, onCreated }: {
               onChange={(e) => setName(e.target.value)} required
               placeholder={lang === 'kz' ? 'Мысалы: ИТ-21' : 'Например: ИТ-21'} />
           </div>
+          {!isTeacher && (
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               {lang === 'kz' ? 'Куратор' : 'Куратор'}
@@ -1434,6 +1456,7 @@ function CreateClassModal({ lang, onClose, onCreated }: {
               </p>
             )}
           </div>
+          )}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               {lang === 'kz' ? 'Оқу жылы' : 'Учебный год'}
@@ -1446,7 +1469,7 @@ function CreateClassModal({ lang, onClose, onCreated }: {
             <button type="button" className="btn-secondary" onClick={onClose}>
               {lang === 'kz' ? 'Бас тарту' : 'Отмена'}
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !teacherId}>
+            <button type="submit" className="btn-primary" disabled={submitting || (!isTeacher && !teacherId)}>
               {submitting ? <Loader2 size={18} className="animate-spin" /> :
                 lang === 'kz' ? 'Жасау' : 'Создать'}
             </button>
@@ -1457,8 +1480,8 @@ function CreateClassModal({ lang, onClose, onCreated }: {
   );
 }
 
-function AddStudentsModal({ lang, classId, onClose, onAdded }: {
-  lang: Lang; classId: string; onClose: () => void; onAdded: () => void;
+function AddStudentsModal({ lang, apiBase, classId, onClose, onAdded }: {
+  lang: Lang; apiBase: string; classId: string; onClose: () => void; onAdded: () => void;
 }) {
   const [students, setStudents] = useState<Array<{ id: string; full_name: string }>>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -1466,13 +1489,13 @@ function AddStudentsModal({ lang, classId, onClose, onAdded }: {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get<UserRow[]>('/api/admin/users')
+    api.get<UserRow[]>(`${apiBase}/users`)
       .then((res) => {
         const data = Array.isArray(res) ? res : [];
         setStudents(data.filter((u) => u.role === 'student'));
       })
       .catch(() => setStudents([]));
-  }, []);
+  }, [apiBase]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -1487,7 +1510,7 @@ function AddStudentsModal({ lang, classId, onClose, onAdded }: {
     setSubmitting(true);
     setError('');
     try {
-      await api.post(`/api/admin/classes/${classId}/students`, { student_ids: Array.from(selected) });
+      await api.post(`${apiBase}/classes/${classId}/students`, { student_ids: Array.from(selected) });
       onAdded();
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка'));
@@ -1542,25 +1565,25 @@ interface ClassStudent {
   telegram_chat_id: string | null;
 }
 
-function ViewStudentsModal({ lang, classId, onClose, onChanged }: {
-  lang: Lang; classId: string; onClose: () => void; onChanged: () => void;
+function ViewStudentsModal({ lang, apiBase, classId, onClose, onChanged }: {
+  lang: Lang; apiBase: string; classId: string; onClose: () => void; onChanged: () => void;
 }) {
   const [students, setStudents] = useState<ClassStudent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadStudents = () => {
     setLoading(true);
-    api.get<ClassStudent[]>(`/api/admin/classes/${classId}/students`)
+    api.get<ClassStudent[]>(`${apiBase}/classes/${classId}/students`)
       .then((res) => setStudents(Array.isArray(res) ? res : []))
       .catch(() => setStudents([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadStudents(); }, [classId]);
+  useEffect(() => { loadStudents(); }, [classId, apiBase]);
 
   const removeStudent = (studentId: string) => {
     if (!confirm(lang === 'kz' ? 'Оқушыны жоюға сенімдісіз бе?' : 'Удалить ученика из группы?')) return;
-    api.delete(`/api/admin/classes/${classId}/students/${studentId}`)
+    api.delete(`${apiBase}/classes/${classId}/students/${studentId}`)
       .then(() => { loadStudents(); onChanged(); })
       .catch(() => {});
   };

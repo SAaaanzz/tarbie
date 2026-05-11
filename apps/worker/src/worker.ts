@@ -16,6 +16,7 @@ import ratingRoutes from './routes/ratings.js';
 import courseRoutes from './routes/courses.js';
 import assistantRoutes from './routes/assistant.js';
 import premiumRoutes from './routes/premium.js';
+import teacherRoutes from './routes/teacher.js';
 import { structuredLog, nowISO } from '@tarbie/shared';
 import type { QueueMessage } from '@tarbie/shared';
 import { sendRatingRequest } from './routes/telegram-bot.js';
@@ -39,6 +40,7 @@ app.route('/api/ratings', ratingRoutes);
 app.route('/api/courses', courseRoutes);
 app.route('/api/assistant', assistantRoutes);
 app.route('/api/premium', premiumRoutes);
+app.route('/api/teacher', teacherRoutes);
 
 app.get('/api/health', (c) => {
   return c.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });

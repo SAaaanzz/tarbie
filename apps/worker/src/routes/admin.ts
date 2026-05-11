@@ -11,7 +11,7 @@ admin.use('*', authMiddleware, requireRole('admin'));
 admin.get('/users', async (c) => {
   const user = c.get('user');
   const rows = await c.env.DB.prepare(
-    'SELECT id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at, avatar_url, premium, premium_expires_at FROM users WHERE school_id = ? ORDER BY full_name'
+    'SELECT u.id, u.full_name, u.role, u.phone, u.telegram_chat_id, u.whatsapp_number, u.lang, u.created_at, u.avatar_url, u.premium, u.premium_expires_at, u.created_by, cb.full_name as created_by_name FROM users u LEFT JOIN users cb ON u.created_by = cb.id WHERE u.school_id = ? ORDER BY u.full_name'
   ).bind(user.school_id).all();
   return c.json({ success: true, data: rows.results });
 });
@@ -36,12 +36,12 @@ admin.post('/users', async (c) => {
   const now = nowISO();
 
   await c.env.DB.prepare(
-    `INSERT INTO users (id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, user.school_id, parsed.data.full_name, parsed.data.role,
     parsed.data.phone, parsed.data.telegram_chat_id ?? null,
-    parsed.data.whatsapp_number ?? null, parsed.data.lang, now
+    parsed.data.whatsapp_number ?? null, parsed.data.lang, now, user.id
   ).run();
 
   return c.json({ success: true, data: { id, ...parsed.data } }, 201);
@@ -95,9 +95,9 @@ admin.post('/users/bulk', async (c) => {
     const chunk = toInsert.slice(start, start + CHUNK);
     const stmts = chunk.map(u =>
       c.env.DB.prepare(
-        `INSERT INTO users (id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(u.id, schoolId, u.full_name, u.role, u.phone, null, null, u.lang, now)
+        `INSERT INTO users (id, school_id, full_name, role, phone, telegram_chat_id, whatsapp_number, lang, created_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(u.id, schoolId, u.full_name, u.role, u.phone, null, null, u.lang, now, user.id)
     );
     try {
       await c.env.DB.batch(stmts);
@@ -336,10 +336,11 @@ admin.post('/import', async (c) => {
 admin.get('/classes', async (c) => {
   const user = c.get('user');
   const rows = await c.env.DB.prepare(
-    `SELECT cl.*, u.full_name as teacher_name,
+    `SELECT cl.*, u.full_name as teacher_name, cb.full_name as created_by_name,
        (SELECT COUNT(*) FROM class_students WHERE class_id = cl.id) as student_count
      FROM classes cl
      JOIN users u ON cl.teacher_id = u.id
+     LEFT JOIN users cb ON cl.created_by = cb.id
      WHERE cl.school_id = ?
      ORDER BY cl.name`
   ).bind(user.school_id).all();
@@ -364,8 +365,8 @@ admin.post('/classes', async (c) => {
 
   const id = generateId();
   await c.env.DB.prepare(
-    'INSERT INTO classes (id, school_id, name, teacher_id, academic_year) VALUES (?, ?, ?, ?, ?)'
-  ).bind(id, user.school_id, parsed.data.name, parsed.data.teacher_id, parsed.data.academic_year).run();
+    'INSERT INTO classes (id, school_id, name, teacher_id, academic_year, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(id, user.school_id, parsed.data.name, parsed.data.teacher_id, parsed.data.academic_year, user.id).run();
 
   return c.json({ success: true, data: { id, school_id: user.school_id, ...parsed.data } }, 201);
 });
