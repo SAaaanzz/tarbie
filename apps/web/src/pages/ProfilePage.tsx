@@ -203,8 +203,8 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {/* Premium section */}
-      <div className={`rounded-2xl p-6 shadow-sm border ${isPremium ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+      {/* Premium section — only for teachers/admins */}
+      {(user?.role === 'admin' || user?.role === 'teacher') && <div className={`rounded-2xl p-6 shadow-sm border ${isPremium ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200' : 'bg-white border-gray-200'}`}>
         <div className="flex items-center gap-3 mb-4">
           <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isPremium ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white' : 'bg-gray-100 text-gray-400'}`}><Crown size={20} /></div>
           <div className="flex-1">
@@ -238,7 +238,7 @@ export function ProfilePage() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Premium purchase modal */}
       {showPremiumModal && (
