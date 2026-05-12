@@ -4,9 +4,14 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzha
 
 class ApiClient {
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   setToken(token: string | null): void {
     this.token = token;
+  }
+
+  setOnUnauthorized(cb: () => void): void {
+    this.onUnauthorized = cb;
   }
 
   private async request<T>(
@@ -63,6 +68,9 @@ class ApiClient {
     }
 
     if (!res.ok) {
+      if (res.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
       const error = json as ApiError;
       throw new ApiRequestError(error.code ?? 'UNKNOWN', error.message ?? 'Request failed', res.status);
     }

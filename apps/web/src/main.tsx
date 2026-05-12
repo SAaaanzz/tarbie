@@ -671,8 +671,8 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
       const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
 
       if (mode === 'full') {
-        // Full mode: col1=StudentName, col2=StudentPhone, col3=GroupName, col4=TeacherName, col5=TeacherPhone
-        // Teacher range inheritance: if teacher columns are empty, inherit from last row that had them
+        // Full mode for teachers: col1=StudentName, col2=StudentPhone, col3=GroupName (no curator needed)
+        // Full mode for admins: col1=StudentName, col2=StudentPhone, col3=GroupName, col4=TeacherName, col5=TeacherPhone
         const parsed: ImportEntry[] = [];
         let lastTeacherName = '';
         let lastTeacherPhone = '';
@@ -685,13 +685,14 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
           if (!sName && !sPhone) continue;
 
           const gName = String(row[2] ?? '').trim() || lastGroupName;
-          const tName = String(row[3] ?? '').trim();
-          const tPhone = String(row[4] ?? '').trim();
 
-          // Update inherited teacher if this row has teacher info
-          if (tName && tPhone) {
-            lastTeacherName = tName;
-            lastTeacherPhone = normalizePhone(tPhone);
+          if (!isTeacher) {
+            const tName = String(row[3] ?? '').trim();
+            const tPhone = String(row[4] ?? '').trim();
+            if (tName && tPhone) {
+              lastTeacherName = tName;
+              lastTeacherPhone = normalizePhone(tPhone);
+            }
           }
           if (gName) lastGroupName = gName;
 
@@ -699,15 +700,15 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
             student_name: sName,
             student_phone: sPhone,
             group_name: gName,
-            teacher_name: lastTeacherName,
-            teacher_phone: lastTeacherPhone,
+            teacher_name: isTeacher ? '' : lastTeacherName,
+            teacher_phone: isTeacher ? '' : lastTeacherPhone,
           };
 
           // Validate
           if (!sName) entry.error = lang === 'kz' ? 'Аты жоқ' : 'Нет имени';
           else if (!validatePhone(sPhone)) entry.error = lang === 'kz' ? 'Телефон қате' : 'Неверный телефон';
-          else if (gName && !lastTeacherPhone) entry.error = lang === 'kz' ? 'Куратор жоқ' : 'Нет куратора';
-          else if (lastTeacherPhone && !validatePhone(lastTeacherPhone)) entry.error = lang === 'kz' ? 'Куратор телефоны қате' : 'Неверный тел. куратора';
+          else if (!isTeacher && gName && !lastTeacherPhone) entry.error = lang === 'kz' ? 'Куратор жоқ' : 'Нет куратора';
+          else if (!isTeacher && lastTeacherPhone && !validatePhone(lastTeacherPhone)) entry.error = lang === 'kz' ? 'Куратор телефоны қате' : 'Неверный тел. куратора';
 
           parsed.push(entry);
         }
@@ -845,18 +846,33 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
 
   const downloadTemplate = async () => {
     const XLSX = await import('xlsx');
-    const ws = XLSX.utils.aoa_to_sheet(mode === 'full' ? [
-      ['ФИО ученика', 'Телефон ученика', 'Группа', 'ФИО куратора', 'Телефон куратора'],
-      ['Иванов Алексей', '+77011234567', 'ИТ-21', 'Петров А.Б.', '+77051112233'],
-      ['Сидорова Мария', '+77029876543', 'ИТ-21', '', ''],
-      ['Козлов Данияр', '+77031234567', 'ИТ-21', '', ''],
-      ['Нурлан Айгерим', '+77041234567', 'ИТ-22', 'Смирнова В.Г.', '+77061112233'],
-      ['Ахметов Болат', '+77051234567', 'ИТ-22', '', ''],
-    ] : [
-      ['ФИО', 'Телефон'],
-      ['Иванов Алексей', '+77011234567'],
-      ['Петрова Мария', '87029876543'],
-    ]);
+    let templateData: unknown[][];
+    if (mode === 'full' && isTeacher) {
+      templateData = [
+        ['ФИО ученика', 'Телефон ученика', 'Группа'],
+        ['Иванов Алексей', '+77011234567', 'ИТ-21'],
+        ['Сидорова Мария', '+77029876543', 'ИТ-21'],
+        ['Козлов Данияр', '+77031234567', 'ИТ-21'],
+        ['Нурлан Айгерим', '+77041234567', 'ИТ-22'],
+        ['Ахметов Болат', '+77051234567', 'ИТ-22'],
+      ];
+    } else if (mode === 'full') {
+      templateData = [
+        ['ФИО ученика', 'Телефон ученика', 'Группа', 'ФИО куратора', 'Телефон куратора'],
+        ['Иванов Алексей', '+77011234567', 'ИТ-21', 'Петров А.Б.', '+77051112233'],
+        ['Сидорова Мария', '+77029876543', 'ИТ-21', '', ''],
+        ['Козлов Данияр', '+77031234567', 'ИТ-21', '', ''],
+        ['Нурлан Айгерим', '+77041234567', 'ИТ-22', 'Смирнова В.Г.', '+77061112233'],
+        ['Ахметов Болат', '+77051234567', 'ИТ-22', '', ''],
+      ];
+    } else {
+      templateData = [
+        ['ФИО', 'Телефон'],
+        ['Иванов Алексей', '+77011234567'],
+        ['Петрова Мария', '87029876543'],
+      ];
+    }
+    const ws = XLSX.utils.aoa_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Import');
     XLSX.writeFile(wb, mode === 'full' ? 'import_template_full.xlsx' : 'import_template_simple.xlsx');
@@ -889,13 +905,17 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
                   <h3 className="font-semibold text-gray-900">{lang === 'kz' ? 'Толық импорт' : 'Полный импорт'}</h3>
                 </div>
                 <p className="text-xs text-gray-500">
-                  {lang === 'kz'
-                    ? 'Оқушылар + Топтар + Кураторлар. 5 баған: ФИО, Телефон, Топ, Куратор ФИО, Куратор Телефон'
-                    : 'Ученики + Группы + Кураторы. 5 столбцов: ФИО, Телефон, Группа, ФИО куратора, Телефон куратора'}
+                  {isTeacher
+                    ? (lang === 'kz' ? 'Оқушылар + Топтар. 3 баған: ФИО, Телефон, Топ' : 'Ученики + Группы. 3 столбца: ФИО, Телефон, Группа')
+                    : (lang === 'kz'
+                      ? 'Оқушылар + Топтар + Кураторлар. 5 баған: ФИО, Телефон, Топ, Куратор ФИО, Куратор Телефон'
+                      : 'Ученики + Группы + Кураторы. 5 столбцов: ФИО, Телефон, Группа, ФИО куратора, Телефон куратора')}
                 </p>
-                <p className="mt-2 text-xs text-primary-600 font-medium">
-                  {lang === 'kz' ? 'Куратор мәліметтері тек 1 рет жазылады — қалғандарына мұра болады' : 'Данные куратора пишутся 1 раз — наследуются для остальных'}
-                </p>
+                {!isTeacher && (
+                  <p className="mt-2 text-xs text-primary-600 font-medium">
+                    {lang === 'kz' ? 'Куратор мәліметтері тек 1 рет жазылады — қалғандарына мұра болады' : 'Данные куратора пишутся 1 раз — наследуются для остальных'}
+                  </p>
+                )}
               </button>
               <button onClick={() => { setMode('simple'); setStep('upload'); }}
                 className="rounded-xl border-2 border-gray-200 p-5 text-left hover:border-green-400 hover:bg-green-50 transition-colors group">
@@ -923,7 +943,9 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
               </p>
               <p className="text-xs text-gray-500">
                 {mode === 'full'
-                  ? (lang === 'kz' ? '5 баған: ФИО, Телефон, Топ, Куратор ФИО, Куратор Телефон' : '5 столбцов: ФИО, Телефон, Группа, ФИО куратора, Тел. куратора')
+                  ? (isTeacher
+                    ? (lang === 'kz' ? '3 баған: ФИО, Телефон, Топ' : '3 столбца: ФИО, Телефон, Группа')
+                    : (lang === 'kz' ? '5 баған: ФИО, Телефон, Топ, Куратор ФИО, Куратор Телефон' : '5 столбцов: ФИО, Телефон, Группа, ФИО куратора, Тел. куратора'))
                   : (lang === 'kz' ? '2 баған: ФИО, Телефон' : '2 столбца: ФИО, Телефон')}
               </p>
             </div>
@@ -938,7 +960,7 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
                 {lang === 'kz' ? 'Үлгіні жүктеу' : 'Скачать шаблон'}
               </button>
             </div>
-            {mode === 'full' && (
+            {mode === 'full' && !isTeacher && (
               <div className="mt-5 rounded-lg bg-blue-50 p-4 text-xs text-blue-700 max-w-lg w-full">
                 <p className="font-medium mb-2">{lang === 'kz' ? 'Мысал:' : 'Пример:'}</p>
                 <div className="overflow-auto">
@@ -959,6 +981,26 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
                   </table>
                 </div>
                 <p className="mt-2 text-blue-500">{lang === 'kz' ? 'Куратор деректері бос болса, жоғарыдағыдан алынады' : 'Если столбцы куратора пустые — берутся из строки выше'}</p>
+              </div>
+            )}
+            {mode === 'full' && isTeacher && (
+              <div className="mt-5 rounded-lg bg-blue-50 p-4 text-xs text-blue-700 max-w-lg w-full">
+                <p className="font-medium mb-2">{lang === 'kz' ? 'Мысал:' : 'Пример:'}</p>
+                <div className="overflow-auto">
+                  <table className="w-full text-left text-blue-600 whitespace-nowrap">
+                    <thead><tr className="border-b border-blue-200">
+                      <th className="pb-1 pr-2">{lang === 'kz' ? 'ФИО' : 'ФИО'}</th>
+                      <th className="pb-1 pr-2">{lang === 'kz' ? 'Тел' : 'Тел'}</th>
+                      <th className="pb-1">{lang === 'kz' ? 'Топ' : 'Группа'}</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr><td className="pr-2 py-0.5">Иванов А.</td><td className="pr-2">+7701...</td><td>ИТ-21</td></tr>
+                      <tr><td className="pr-2 py-0.5">Сидорова М.</td><td className="pr-2">+7702...</td><td>ИТ-21</td></tr>
+                      <tr><td className="pr-2 py-0.5">Нурлан А.</td><td className="pr-2">+7704...</td><td>ИТ-22</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-2 text-blue-500">{lang === 'kz' ? 'Куратор автоматты түрде сіз боласыз' : 'Куратором автоматически назначаетесь вы'}</p>
               </div>
             )}
             <button className="mt-4 text-sm text-gray-500 hover:text-gray-700" onClick={() => { setStep('mode'); setEntries([]); }}>

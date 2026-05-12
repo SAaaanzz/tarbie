@@ -185,39 +185,4 @@ ratings.get('/session/:sessionId', authMiddleware, async (c) => {
   });
 });
 
-// ── Get student's completed sessions available for rating ──
-ratings.get('/my-sessions', authMiddleware, async (c) => {
-  const authUser = c.get('user');
-  if (authUser.role !== 'student') {
-    return c.json({ success: false, code: 'FORBIDDEN', message: 'Students only' }, 403);
-  }
-
-  const rows = await c.env.DB.prepare(
-    `SELECT ts.id, ts.topic, ts.planned_date, ts.teacher_id,
-            u.full_name as teacher_name,
-            (SELECT id FROM session_ratings sr WHERE sr.session_id = ts.id AND sr.student_id = ?) as rated_id
-     FROM tarbie_sessions ts
-     JOIN classes c ON ts.class_id = c.id
-     JOIN class_students cs ON cs.class_id = c.id AND cs.student_id = ?
-     JOIN users u ON ts.teacher_id = u.id
-     WHERE ts.status = 'completed'
-     ORDER BY ts.planned_date DESC
-     LIMIT 50`
-  ).bind(authUser.id, authUser.id).all<{
-    id: string; topic: string; planned_date: string; teacher_id: string;
-    teacher_name: string; rated_id: string | null;
-  }>();
-
-  return c.json({
-    success: true,
-    data: rows.results.map(r => ({
-      session_id: r.id,
-      topic: r.topic,
-      planned_date: r.planned_date,
-      teacher_name: r.teacher_name,
-      already_rated: !!r.rated_id,
-    })),
-  });
-});
-
 export default ratings;

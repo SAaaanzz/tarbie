@@ -26,6 +26,7 @@ export const useAuthStore = create<AuthState>()(
 
       setAuth: (token: string, user: User) => {
         api.setToken(token);
+        api.setOnUnauthorized(() => get().logout());
         set({ token, user, isAuthenticated: true, lang: user.lang, isLoading: false });
       },
 
@@ -45,6 +46,7 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
         api.setToken(state.token);
+        api.setOnUnauthorized(() => get().logout());
         try {
           const user = await api.get<User>('/api/auth/me');
           set({ user, isAuthenticated: true, isLoading: false });
