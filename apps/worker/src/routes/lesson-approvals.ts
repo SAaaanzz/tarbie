@@ -47,10 +47,19 @@ lessonApprovals.post('/', requireRole('teacher'), async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Already pending approval' }, 400);
   }
 
-  // Upload file to KV (binary as ArrayBuffer)
+  // Upload file to KV as base64 string
   const fileKey = `lesson-approvals:${generateId()}_${file.name}`;
   const arrayBuffer = await file.arrayBuffer();
-  await c.env.KV.put(fileKey, arrayBuffer, { metadata: { contentType: file.type, fileName: file.name } });
+  const bytes = new Uint8Array(arrayBuffer);
+  // Chunked base64 encoding to avoid stack overflow on large files
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  const base64 = btoa(binary);
+  await c.env.KV.put(fileKey, base64, { metadata: { contentType: file.type, fileName: file.name } });
 
   const now = new Date().toISOString();
   const id = generateId();
@@ -306,14 +315,21 @@ lessonApprovals.get('/:id/file', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Not found' }, 404);
   }
 
-  const { value, metadata } = await c.env.KV.getWithMetadata<{ contentType?: string; fileName?: string }>(approval.word_file_url, { type: 'arrayBuffer' });
+  const { value, metadata } = await c.env.KV.getWithMetadata<{ contentType?: string; fileName?: string }>(approval.word_file_url, { type: 'text' });
   if (!value) {
     return c.json({ success: false, message: 'File not found in storage' }, 404);
   }
 
+  // Decode base64 back to binary
+  const binaryStr = atob(value as string);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
   c.header('Content-Type', metadata?.contentType || 'application/octet-stream');
   c.header('Content-Disposition', `attachment; filename="${approval.word_file_name}"`);
-  return c.body(value as ArrayBuffer);
+  return c.body(bytes.buffer);
 });
 
 export { lessonApprovals };
