@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
   Download, Eye,
 } from 'lucide-react';
+import mammoth from 'mammoth';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';
 
@@ -81,24 +82,39 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
+  const [wordHtml, setWordHtml] = useState<string>('');
+  const [loadingDoc, setLoadingDoc] = useState(false);
+
   const handleViewDocument = async (id: string) => {
+    setLoadingDoc(true);
     try {
+      // Fetch document metadata (signatures)
       const doc = await api.get<DocumentData>(`/api/lesson-approvals/${id}/document`);
       setViewDoc(doc);
+
+      // Fetch the actual Word file and convert to HTML
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const arrayBuffer = await res.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      setWordHtml(result.value);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setLoadingDoc(false);
     }
   };
 
-  const downloadPdf = () => {
-    if (!viewDoc) return;
-    // Generate PDF in browser using canvas
+  const downloadPdf = useCallback(() => {
+    if (!viewDoc || !wordHtml) return;
     const w = window.open('', '_blank');
     if (!w) return;
-    w.document.write(generatePdfHtml(viewDoc));
+    w.document.write(generatePdfHtml(viewDoc, wordHtml));
     w.document.close();
     setTimeout(() => w.print(), 500);
-  };
+  }, [viewDoc, wordHtml]);
 
   const statusBadge = (status: string) => {
     switch (status) {
@@ -224,100 +240,73 @@ export function LessonApprovalsPage() {
       )}
 
       {/* Document preview modal */}
-      {viewDoc && (
+      {(viewDoc || loadingDoc) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {lang === 'kz' ? 'Бекітілген құжат' : 'Утверждённый документ'}
-              </h2>
-              <div className="flex gap-2">
-                <button onClick={downloadPdf}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                  <Download size={16} />
-                  PDF
-                </button>
-                <button onClick={() => setViewDoc(null)}
-                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
-                  <XCircle size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Document preview */}
-            <div className="border border-gray-200 rounded-lg p-8 bg-white space-y-8">
-              {/* Page 1 header */}
-              <div className="text-right text-sm font-medium text-gray-700">
-                А.Абдраймова
-              </div>
-
-              {/* Admin signature */}
-              <div className="flex items-end justify-between">
-                <div>
-                  {viewDoc.admin_signature && (
-                    <img src={viewDoc.admin_signature} alt="Подпись" className="h-12 object-contain" />
-                  )}
-                  <div className="border-t border-gray-400 mt-1 pt-1 text-xs text-gray-500 w-40">
-                    {lang === 'kz' ? 'Қолтаңба' : 'Подпись'}
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            {loadingDoc ? (
+              <div className="flex justify-center py-20"><Loader2 size={32} className="animate-spin text-primary-600" /></div>
+            ) : viewDoc && (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {lang === 'kz' ? 'Бекітілген құжат' : 'Утверждённый документ'}
+                  </h2>
+                  <div className="flex gap-2">
+                    <button onClick={downloadPdf}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                      <Download size={16} />
+                      PDF
+                    </button>
+                    <button onClick={() => { setViewDoc(null); setWordHtml(''); }}
+                      className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
+                      <XCircle size={18} />
+                    </button>
                   </div>
                 </div>
-                <div className="text-sm text-gray-600">
-                  {viewDoc.approved_at ? new Date(viewDoc.approved_at).toLocaleDateString('ru-RU') : ''}
-                </div>
-              </div>
 
-              <hr className="border-gray-200" />
-
-              {/* Page 2 content */}
-              <div>
-                <h3 className="text-center text-base font-bold text-gray-900 mb-4">
-                  {viewDoc.topic}
-                </h3>
-                <p className="text-sm text-gray-700 mb-6">
-                  {lang === 'kz' ? 'Жоспарланған күні: ' : 'Запланированная дата: '}
-                  {viewDoc.planned_date}
-                </p>
-              </div>
-
-              {/* Curator section */}
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  {viewDoc.curator_name}
-                </p>
-                <div className="flex items-end justify-between">
-                  <div>
-                    {viewDoc.curator_signature && (
-                      <img src={viewDoc.curator_signature} alt="Подпись куратора" className="h-12 object-contain" />
-                    )}
-                    <div className="border-t border-gray-400 mt-1 pt-1 text-xs text-gray-500 w-40">
-                      {lang === 'kz' ? 'Қолтаңба' : 'Подпись'}
+                {/* Render the actual Word document with signatures */}
+                <div className="border border-gray-200 rounded-lg bg-white">
+                  {/* Signature header overlay */}
+                  <div className="px-8 pt-6 pb-2 border-b border-gray-100">
+                    <div className="flex justify-end items-start gap-4">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-700">Бекітемін:</p>
+                        {viewDoc.admin_signature && (
+                          <img src={viewDoc.admin_signature} alt="" className="h-10 object-contain ml-auto mt-1" />
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">А.Абдраймова</p>
+                        <p className="text-xs text-gray-400">{viewDoc.approved_at ? new Date(viewDoc.approved_at).toLocaleDateString('ru-RU') : ''}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-sm text-gray-600">
-                    {viewDoc.approved_at ? new Date(viewDoc.approved_at).toLocaleDateString('ru-RU') : ''}
+
+                  {/* Actual document HTML content */}
+                  <div className="px-8 py-6 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: wordHtml }}
+                  />
+
+                  {/* Signatures footer */}
+                  <div className="px-8 pb-6 pt-4 border-t border-gray-100 space-y-4">
+                    <div className="flex items-end gap-8">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Келісілді / Мехирам:</p>
+                        {viewDoc.admin_signature && (
+                          <img src={viewDoc.admin_signature} alt="" className="h-10 object-contain" />
+                        )}
+                        <div className="border-t border-gray-400 w-40 mt-1 pt-0.5 text-[10px] text-gray-400">Сонурова М.М.</div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Топ жетекшісі:</p>
+                        {viewDoc.curator_signature && (
+                          <img src={viewDoc.curator_signature} alt="" className="h-10 object-contain" />
+                        )}
+                        <div className="border-t border-gray-400 w-40 mt-1 pt-0.5 text-[10px] text-gray-400">{viewDoc.curator_name}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600 mt-4">
-                  {lang === 'kz' ? 'Топ жетекшісі' : 'Куратор группы'}
-                  <span className="float-right">
-                    {viewDoc.curator_signature && (
-                      <img src={viewDoc.curator_signature} alt="" className="h-8 object-contain inline-block" />
-                    )}
-                  </span>
-                </p>
-              </div>
-
-              {/* Approval stamp */}
-              <div className="border-2 border-green-500 rounded-lg p-4 text-center bg-green-50">
-                <CheckCircle2 size={24} className="mx-auto text-green-600 mb-1" />
-                <p className="text-sm font-bold text-green-700">
-                  {lang === 'kz' ? 'САБАҚ БЕКІТІЛДІ' : 'УРОК ОДОБРЕН'}
-                </p>
-                <p className="text-xs text-green-600 mt-1">
-                  {viewDoc.admin_name} • {viewDoc.approved_at ? new Date(viewDoc.approved_at).toLocaleDateString('ru-RU') : ''}
-                </p>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -325,41 +314,46 @@ export function LessonApprovalsPage() {
   );
 }
 
-function generatePdfHtml(doc: DocumentData): string {
+function generatePdfHtml(doc: DocumentData, wordHtml: string): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${doc.topic}</title>
 <style>
-body { font-family: 'Times New Roman', serif; padding: 40px 60px; }
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.sig-img { height: 50px; object-fit: contain; }
-.sig-line { border-top: 1px solid #333; width: 200px; margin-top: 4px; padding-top: 4px; font-size: 10px; color: #666; }
-.flex-row { display: flex; justify-content: space-between; align-items: flex-end; margin: 20px 0; }
-hr { margin: 30px 0; border: none; border-top: 1px solid #ccc; }
-.stamp { border: 2px solid #16a34a; border-radius: 8px; padding: 16px; text-align: center; background: #f0fdf4; margin-top: 30px; }
-.stamp-title { font-weight: bold; color: #16a34a; font-size: 14px; }
-.stamp-sub { color: #16a34a; font-size: 11px; margin-top: 4px; }
-@media print { body { padding: 20px; } }
+body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.5; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+td, th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+p { margin: 4px 0; }
+img { max-width: 100%; }
+.sig-block { margin-top: 30px; page-break-inside: avoid; }
+.sig-row { display: flex; align-items: flex-end; gap: 40px; margin: 16px 0; }
+.sig-item { }
+.sig-img { height: 50px; object-fit: contain; display: block; }
+.sig-line { border-top: 1px solid #333; width: 200px; margin-top: 2px; padding-top: 2px; font-size: 11px; color: #444; }
+.header-sig { text-align: right; margin-bottom: 20px; }
+@media print { body { padding: 20px 40px; } }
 </style></head><body>
-<div class="text-right" style="font-weight:500">А.Абдраймова</div>
-<div class="flex-row">
-  <div>${doc.admin_signature ? `<img src="${doc.admin_signature}" class="sig-img"/>` : ''}<div class="sig-line">Подпись</div></div>
-  <div>${doc.approved_at ? new Date(doc.approved_at).toLocaleDateString('ru-RU') : ''}</div>
+<div class="header-sig">
+  <p>Бекітемін:</p>
+  <p>Директордың оқу-тәрбие жұмысы жөніндегі орынбасары</p>
+  ${doc.admin_signature ? `<img src="${doc.admin_signature}" class="sig-img" style="margin-left:auto"/>` : ''}
+  <p>__________А.Абдраймова</p>
+  <p>${doc.approved_at ? new Date(doc.approved_at).toLocaleDateString('ru-RU') : '__________'} 2026 ж.</p>
 </div>
-<hr/>
-<h2 class="text-center">${doc.topic}</h2>
-<p>Запланированная дата: ${doc.planned_date}</p>
-<div style="margin-top:30px">
-  <p style="font-weight:500">${doc.curator_name}</p>
-  <div class="flex-row">
-    <div>${doc.curator_signature ? `<img src="${doc.curator_signature}" class="sig-img"/>` : ''}<div class="sig-line">Подпись</div></div>
-    <div>${doc.approved_at ? new Date(doc.approved_at).toLocaleDateString('ru-RU') : ''}</div>
+
+${wordHtml}
+
+<div class="sig-block">
+  <div class="sig-row">
+    <div class="sig-item">
+      <p style="font-size:12px;color:#555;">Келісілді:</p>
+      ${doc.admin_signature ? `<img src="${doc.admin_signature}" class="sig-img"/>` : ''}
+      <div class="sig-line">Сонурова М.М.</div>
+    </div>
+    <div class="sig-item">
+      <p style="font-size:12px;color:#555;">Топ жетекшісі:</p>
+      ${doc.curator_signature ? `<img src="${doc.curator_signature}" class="sig-img"/>` : ''}
+      <div class="sig-line">${doc.curator_name}</div>
+    </div>
   </div>
-  <p style="margin-top:16px">Топ жетекшісі <span style="float:right">${doc.curator_signature ? `<img src="${doc.curator_signature}" class="sig-img" style="display:inline-block"/>` : ''}</span></p>
-</div>
-<div class="stamp">
-  <div class="stamp-title">УРОК ОДОБРЕН</div>
-  <div class="stamp-sub">${doc.admin_name} • ${doc.approved_at ? new Date(doc.approved_at).toLocaleDateString('ru-RU') : ''}</div>
 </div>
 </body></html>`;
 }
