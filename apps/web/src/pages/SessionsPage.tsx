@@ -82,6 +82,7 @@ export function SessionsPage() {
 
     const statusLabel = (s: string) => {
       const map: Record<string, string> = {
+        pending_approval: lang === 'kz' ? 'Бекіту күтуде' : 'На утверждении',
         planned: lang === 'kz' ? 'Жоспарланған' : 'Запланировано',
         completed: lang === 'kz' ? 'Аяқталған' : 'Завершено',
         cancelled: lang === 'kz' ? 'Бас тартылған' : 'Отменено',
@@ -221,7 +222,7 @@ export function SessionsPage() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
-        {(['', 'planned', 'completed', 'cancelled', 'rescheduled'] as const).map((s) => (
+        {(['', 'pending_approval', 'planned', 'completed', 'cancelled', 'rescheduled'] as const).map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
@@ -232,6 +233,7 @@ export function SessionsPage() {
             }`}
           >
             {s === '' ? (lang === 'kz' ? 'Барлығы' : 'Все') :
+             s === 'pending_approval' ? (lang === 'kz' ? 'Бекіту күтуде' : 'На утверждении') :
              s === 'planned' ? (lang === 'kz' ? 'Жоспарланған' : 'Запланировано') :
              s === 'completed' ? (lang === 'kz' ? 'Аяқталған' : 'Завершено') :
              s === 'cancelled' ? (lang === 'kz' ? 'Бас тартылған' : 'Отменено') :

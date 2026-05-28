@@ -4,7 +4,7 @@ const phoneRegex = /^\+7\d{10}$/;
 
 export const langSchema = z.enum(['kz', 'ru']);
 export const roleSchema = z.enum(['admin', 'teacher', 'student']);
-export const sessionStatusSchema = z.enum(['planned', 'completed', 'cancelled', 'rescheduled']);
+export const sessionStatusSchema = z.enum(['pending_approval', 'planned', 'completed', 'cancelled', 'rescheduled']);
 export const attendanceStatusSchema = z.enum(['present', 'absent', 'late', 'excused']);
 export const gradeStatusSchema = z.enum(['present', 'absent', 'makeup']);
 export const notificationChannelSchema = z.enum(['telegram', 'whatsapp']);

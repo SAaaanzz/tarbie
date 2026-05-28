@@ -38,7 +38,6 @@ const navItems: NavItem[] = [
   { label: 'AI-ассистент', labelKz: 'AI-көмекші', icon: <Sparkles size={20} />, href: '/assistant', roles: ['admin', 'teacher'] },
   { label: 'Рейтинг кураторов', labelKz: 'Кураторлар рейтингі', icon: <Star size={20} />, href: '/ratings', roles: ['admin'] },
   { label: 'Отзывы', labelKz: 'Бағалау', icon: <Star size={20} />, href: '/reviews', roles: ['student'] },
-  { label: 'Тесты', labelKz: 'Тесттер', icon: <Settings size={20} />, href: '/test-runner', roles: ['admin'] },
   { label: 'Профиль', labelKz: 'Профиль', icon: <UserCircle size={20} />, href: '/profile', roles: ['admin', 'teacher', 'student'] },
   { label: 'Настройки', labelKz: 'Баптаулар', icon: <Settings size={20} />, href: '/settings', roles: ['admin', 'teacher', 'student'] },
 ];

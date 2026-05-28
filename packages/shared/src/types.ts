@@ -1,6 +1,6 @@
 export type Role = 'admin' | 'teacher' | 'student';
 export type Lang = 'kz' | 'ru';
-export type SessionStatus = 'planned' | 'completed' | 'cancelled' | 'rescheduled';
+export type SessionStatus = 'pending_approval' | 'planned' | 'completed' | 'cancelled' | 'rescheduled';
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
 export type NotificationChannel = 'telegram' | 'whatsapp';
 export type NotificationStatus = 'sent' | 'failed' | 'pending' | 'dead_letter';

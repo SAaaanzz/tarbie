@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { generateId, ERROR_CODES } from '@tarbie/shared';
-import { notifyAdminLessonApproval } from './telegram-bot.js';
+import type { QueueMessage } from '@tarbie/shared';
+import { notifyAdminLessonApproval, notifyCuratorApprovalResult } from './telegram-bot.js';
 
 const lessonApprovals = new Hono<HonoEnv>();
 
@@ -154,6 +155,38 @@ lessonApprovals.post('/:id/approve', requireRole('admin'), async (c) => {
     `UPDATE lesson_approvals SET status = 'approved', approved_by = ?, approved_at = ?, admin_signature_id = ?, updated_at = ? WHERE id = ?`
   ).bind(user.id, now, adminSig?.id || null, now, approvalId).run();
 
+  // Update session status to 'planned'
+  await c.env.DB.prepare(
+    `UPDATE tarbie_sessions SET status = 'planned', updated_at = ? WHERE id = ?`
+  ).bind(now, approval.session_id).run();
+
+  // Send SESSION_PLANNED notification to students
+  const session = await c.env.DB.prepare(
+    `SELECT ts.topic, ts.planned_date, ts.class_id, ts.teacher_id, c.name as class_name
+     FROM tarbie_sessions ts JOIN classes c ON c.id = ts.class_id WHERE ts.id = ?`
+  ).bind(approval.session_id).first<{ topic: string; planned_date: string; class_id: string; teacher_id: string; class_name: string }>();
+
+  if (session) {
+    const students = await c.env.DB.prepare(
+      'SELECT student_id FROM class_students WHERE class_id = ?'
+    ).bind(session.class_id).all<{ student_id: string }>();
+    const userIds = [session.teacher_id, ...students.results.map(s => s.student_id)];
+    const queueMsg: QueueMessage = {
+      event_type: 'SESSION_PLANNED',
+      session_id: approval.session_id,
+      user_ids: userIds,
+      template_vars: { topic: session.topic, date: session.planned_date, class_name: session.class_name, teacher_name: '' },
+      attempt: 0,
+    };
+    await c.env.NOTIFICATION_QUEUE.send(queueMsg);
+  }
+
+  // Notify curator that lesson was approved
+  c.executionCtx.waitUntil(
+    notifyCuratorApprovalResult(approval.curator_id, session?.topic ?? '', true, null, c.env, c.env.TELEGRAM_BOT_TOKEN)
+      .catch(() => {})
+  );
+
   return c.json({ success: true, data: { id: approvalId, status: 'approved', approved_at: now } });
 });
 
@@ -177,9 +210,28 @@ lessonApprovals.post('/:id/reject', requireRole('admin'), async (c) => {
 
   const now = new Date().toISOString();
 
+  const approval2 = await c.env.DB.prepare(
+    'SELECT session_id, curator_id FROM lesson_approvals WHERE id = ?'
+  ).bind(approvalId).first<{ session_id: string; curator_id: string }>();
+
   await c.env.DB.prepare(
     `UPDATE lesson_approvals SET status = 'rejected', approved_by = ?, admin_comment = ?, updated_at = ? WHERE id = ?`
   ).bind(user.id, body.comment || null, now, approvalId).run();
+
+  // Cancel the session
+  await c.env.DB.prepare(
+    `UPDATE tarbie_sessions SET status = 'cancelled', updated_at = ? WHERE id = ? AND status = 'pending_approval'`
+  ).bind(now, approval2?.session_id ?? '').run();
+
+  // Notify curator via Telegram
+  if (approval2) {
+    const sess = await c.env.DB.prepare('SELECT topic FROM tarbie_sessions WHERE id = ?')
+      .bind(approval2.session_id).first<{ topic: string }>();
+    c.executionCtx.waitUntil(
+      notifyCuratorApprovalResult(approval2.curator_id, sess?.topic ?? '', false, body.comment || null, c.env, c.env.TELEGRAM_BOT_TOKEN)
+        .catch(() => {})
+    );
+  }
 
   return c.json({ success: true, data: { id: approvalId, status: 'rejected' } });
 });

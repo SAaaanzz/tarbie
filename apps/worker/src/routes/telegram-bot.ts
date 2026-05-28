@@ -583,6 +583,23 @@ export async function notifyAdminLessonApproval(curatorName: string, topic: stri
   await tg(token, 'sendMessage', { chat_id: adminChatId, text, parse_mode: 'HTML' });
 }
 
+export async function notifyCuratorApprovalResult(curatorId: string, topic: string, approved: boolean, comment: string | null, env: Env, token: string) {
+  const curator = await env.DB.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').bind(curatorId).first<{ telegram_chat_id: string | null }>();
+  if (!curator?.telegram_chat_id) return;
+
+  let text: string;
+  if (approved) {
+    text = `✅ <b>Урок утверждён</b>\n\n📋 <b>Тема:</b> ${esc(topic)}\n\n🎉 Ваш урок одобрен администратором. Можете скачать подписанный PDF в разделе «Утверждение уроков».`;
+  } else {
+    text = `❌ <b>Урок отклонён</b>\n\n📋 <b>Тема:</b> ${esc(topic)}`;
+    if (comment) {
+      text += `\n💬 <b>Комментарий:</b> ${esc(comment)}`;
+    }
+    text += `\n\nВнесите исправления и отправьте заново.`;
+  }
+  await tg(token, 'sendMessage', { chat_id: curator.telegram_chat_id, text, parse_mode: 'HTML' });
+}
+
 // ══════════════════════════════════════════════
 // ADMIN REPLY
 // ══════════════════════════════════════════════

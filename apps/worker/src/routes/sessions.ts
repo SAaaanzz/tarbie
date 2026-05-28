@@ -60,6 +60,8 @@ sessions.get('/', async (c) => {
   } else if (user.role === 'student') {
     conditions.push('ts.class_id IN (SELECT class_id FROM class_students WHERE student_id = ?)');
     params.push(user.id);
+    // Students should not see sessions pending approval
+    conditions.push("ts.status != 'pending_approval'");
   } else {
     conditions.push('c.school_id = ?');
     params.push(user.school_id);
@@ -146,29 +148,35 @@ sessions.post('/', requireRole('admin', 'teacher'), async (c) => {
   const id = generateId();
   const now = nowISO();
 
+  // Curators need admin approval; admins create directly as planned
+  const initialStatus = user.role === 'teacher' ? 'pending_approval' : 'planned';
+
   await c.env.DB.prepare(
     `INSERT INTO tarbie_sessions (id, class_id, teacher_id, topic, planned_date, time_slot, room, status, duration_minutes, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)`
-  ).bind(id, class_id, teacherId, topic, planned_date, time_slot, room, duration_minutes, notes ?? null, now, now).run();
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, class_id, teacherId, topic, planned_date, time_slot, room, initialStatus, duration_minutes, notes ?? null, now, now).run();
 
-  const students = await c.env.DB.prepare(
-    'SELECT student_id FROM class_students WHERE class_id = ?'
-  ).bind(class_id).all<{ student_id: string }>();
+  // Only send SESSION_PLANNED notification if admin created it directly
+  if (initialStatus === 'planned') {
+    const students = await c.env.DB.prepare(
+      'SELECT student_id FROM class_students WHERE class_id = ?'
+    ).bind(class_id).all<{ student_id: string }>();
 
-  const userIds = [teacherId, ...students.results.map(s => s.student_id)];
+    const userIds = [teacherId, ...students.results.map(s => s.student_id)];
 
-  const queueMsg: QueueMessage = {
-    event_type: 'SESSION_PLANNED',
-    session_id: id,
-    user_ids: userIds,
-    template_vars: { topic, date: planned_date, class_name: cls.name, teacher_name: '' },
-    attempt: 0,
-  };
-  await c.env.NOTIFICATION_QUEUE.send(queueMsg);
+    const queueMsg: QueueMessage = {
+      event_type: 'SESSION_PLANNED',
+      session_id: id,
+      user_ids: userIds,
+      template_vars: { topic, date: planned_date, class_name: cls.name, teacher_name: '' },
+      attempt: 0,
+    };
+    await c.env.NOTIFICATION_QUEUE.send(queueMsg);
+  }
 
-  structuredLog('info', 'Session created', { session_id: id, class_id, teacher_id: teacherId });
+  structuredLog('info', 'Session created', { session_id: id, class_id, teacher_id: teacherId, status: initialStatus });
 
-  return c.json({ success: true, data: { id, class_id, teacher_id: teacherId, topic, planned_date, time_slot, room, status: 'planned', duration_minutes } }, 201);
+  return c.json({ success: true, data: { id, class_id, teacher_id: teacherId, topic, planned_date, time_slot, room, status: initialStatus, duration_minutes } }, 201);
 });
 
 sessions.put('/:id', requireRole('admin', 'teacher'), async (c) => {
