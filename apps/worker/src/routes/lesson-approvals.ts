@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { generateId, ERROR_CODES } from '@tarbie/shared';
+import { notifyAdminLessonApproval } from './telegram-bot.js';
 
 const lessonApprovals = new Hono<HonoEnv>();
 
@@ -64,6 +65,18 @@ lessonApprovals.post('/', requireRole('teacher'), async (c) => {
     `INSERT INTO lesson_approvals (id, session_id, curator_id, school_id, word_file_url, word_file_name, status, curator_signature_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
   ).bind(id, sessionId, user.id, user.school_id, fileKey, file.name, curatorSig?.id || null, now, now).run();
+
+  // Notify admin via Telegram
+  const session2 = await c.env.DB.prepare(
+    'SELECT topic FROM tarbie_sessions WHERE id = ?'
+  ).bind(sessionId).first<{ topic: string }>();
+  const curatorUser = await c.env.DB.prepare(
+    'SELECT full_name FROM users WHERE id = ?'
+  ).bind(user.id).first<{ full_name: string }>();
+  c.executionCtx.waitUntil(
+    notifyAdminLessonApproval(curatorUser?.full_name ?? '', session2?.topic ?? 'Без темы', id, c.env, c.env.TELEGRAM_BOT_TOKEN)
+      .catch(() => {})
+  );
 
   return c.json({ success: true, data: { id, status: 'pending' } }, 201);
 });

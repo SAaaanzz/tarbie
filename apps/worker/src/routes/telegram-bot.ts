@@ -570,6 +570,20 @@ export async function forwardMessageToAdmin(ticketId: string, ticketSubject: str
 }
 
 // ══════════════════════════════════════════════
+// LESSON APPROVAL NOTIFICATION
+// ══════════════════════════════════════════════
+export async function notifyAdminLessonApproval(curatorName: string, topic: string, approvalId: string, env: Env, token: string) {
+  // Notify all admins in the same school who have telegram_chat_id
+  const adminChatId = await env.KV.get('support_admin_chat_id');
+  if (!adminChatId) {
+    structuredLog('warn', 'support_admin_chat_id not set, cannot notify about lesson approval', { approvalId });
+    return;
+  }
+  const text = `📝 <b>Новая заявка на утверждение урока</b>\n\n👤 <b>Куратор:</b> ${esc(curatorName)}\n📋 <b>Тема:</b> ${esc(topic)}\n🔖 <b>ID:</b> <code>${approvalId.slice(0, 8)}</code>\n\n🔗 Зайдите в систему для проверки и подписания.`;
+  await tg(token, 'sendMessage', { chat_id: adminChatId, text, parse_mode: 'HTML' });
+}
+
+// ══════════════════════════════════════════════
 // ADMIN REPLY
 // ══════════════════════════════════════════════
 async function handleAdminReply(msg: TgMessage, env: Env, token: string): Promise<boolean> {
