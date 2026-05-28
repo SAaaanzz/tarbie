@@ -98,8 +98,19 @@ export function LessonApprovalsPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const arrayBuffer = await res.arrayBuffer();
-      const result = await mammoth.convertToHtml({ arrayBuffer });
-      setWordHtml(result.value);
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer },
+        { convertImage: mammoth.images.imgElement((image) => {
+          return image.read('base64').then((imageBuffer) => {
+            return { src: `data:${image.contentType};base64,${imageBuffer}` };
+          });
+        })}
+      );
+
+      // Inject signatures into the Word HTML where underscores are
+      let html = result.value;
+      html = injectSignatures(html, doc);
+      setWordHtml(html);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error');
     } finally {
@@ -209,14 +220,16 @@ export function LessonApprovalsPage() {
                     }}>
                     <Download size={16} />
                   </button>
-                  {/* View signed PDF after approval */}
-                  {a.status === 'approved' && (
-                    <button onClick={() => handleViewDocument(a.id)}
-                      className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'PDF құжатты көру' : 'Просмотр PDF с подписями'}>
-                      <Eye size={16} />
-                    </button>
-                  )}
+                  {/* Preview document (with signatures if approved) */}
+                  <button onClick={() => handleViewDocument(a.id)}
+                    className={`rounded-lg p-2 transition-colors ${a.status === 'approved'
+                      ? 'text-green-600 bg-green-50 hover:bg-green-100'
+                      : 'text-gray-600 bg-gray-50 hover:bg-gray-100'}`}
+                    title={a.status === 'approved'
+                      ? (lang === 'kz' ? 'PDF құжатты көру (қолтаңбамен)' : 'Просмотр PDF с подписями')
+                      : (lang === 'kz' ? 'Құжатты көру' : 'Предпросмотр документа')}>
+                    <Eye size={16} />
+                  </button>
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
@@ -264,47 +277,10 @@ export function LessonApprovalsPage() {
                   </div>
                 </div>
 
-                {/* Render the actual Word document with signatures */}
-                <div className="border border-gray-200 rounded-lg bg-white">
-                  {/* Signature header overlay */}
-                  <div className="px-8 pt-6 pb-2 border-b border-gray-100">
-                    <div className="flex justify-end items-start gap-4">
-                      <div className="text-right">
-                        <p className="text-sm text-gray-700">Бекітемін:</p>
-                        {viewDoc.admin_signature && (
-                          <img src={viewDoc.admin_signature} alt="" className="h-10 object-contain ml-auto mt-1" />
-                        )}
-                        <p className="text-xs text-gray-500 mt-1">А.Абдраймова</p>
-                        <p className="text-xs text-gray-400">{viewDoc.approved_at ? new Date(viewDoc.approved_at).toLocaleDateString('ru-RU') : ''}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actual document HTML content */}
-                  <div className="px-8 py-6 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: wordHtml }}
-                  />
-
-                  {/* Signatures footer */}
-                  <div className="px-8 pb-6 pt-4 border-t border-gray-100 space-y-4">
-                    <div className="flex items-end gap-8">
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">Келісілді / Мехирам:</p>
-                        {viewDoc.admin_signature && (
-                          <img src={viewDoc.admin_signature} alt="" className="h-10 object-contain" />
-                        )}
-                        <div className="border-t border-gray-400 w-40 mt-1 pt-0.5 text-[10px] text-gray-400">Сонурова М.М.</div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">Топ жетекшісі:</p>
-                        {viewDoc.curator_signature && (
-                          <img src={viewDoc.curator_signature} alt="" className="h-10 object-contain" />
-                        )}
-                        <div className="border-t border-gray-400 w-40 mt-1 pt-0.5 text-[10px] text-gray-400">{viewDoc.curator_name}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Render the actual Word document as-is, with signatures injected inline */}
+                <div className="border border-gray-200 rounded-lg bg-white px-8 py-6 prose prose-sm max-w-none [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_img]:max-w-full"
+                  dangerouslySetInnerHTML={{ __html: wordHtml }}
+                />
               </>
             )}
           </div>
@@ -314,46 +290,47 @@ export function LessonApprovalsPage() {
   );
 }
 
+// Inject signature images into the Word HTML where underscore patterns appear
+function injectSignatures(html: string, doc: DocumentData): string {
+  const sigImg = (src: string | null) =>
+    src ? `<img src="${src}" style="height:40px;object-fit:contain;display:inline-block;vertical-align:bottom;margin:0 4px"/>` : '';
+
+  // Replace underscore lines before "А.Абдраймова" with admin signature
+  // Pattern: __________А.Абдраймова or variants
+  html = html.replace(
+    /_{3,}\s*А\.?\s*Абдраймова/g,
+    `${sigImg(doc.admin_signature)} А.Абдраймова`
+  );
+
+  // Replace underscore lines before curator name (Топ жетекшісі: _________)
+  html = html.replace(
+    /(Топ жетекшісі:\s*)_{3,}/g,
+    `$1${sigImg(doc.curator_signature)}`
+  );
+
+  // Replace standalone date underscore lines near "2026" (admin approval date)
+  if (doc.approved_at) {
+    const dateStr = new Date(doc.approved_at).toLocaleDateString('ru-RU');
+    html = html.replace(
+      /_{3,}(\s*2026\s*ж\.?)/g,
+      `${dateStr}$1`
+    );
+  }
+
+  return html;
+}
+
 function generatePdfHtml(doc: DocumentData, wordHtml: string): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${doc.topic}</title>
 <style>
-body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.5; }
+body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.6; }
 table { border-collapse: collapse; width: 100%; margin: 10px 0; }
 td, th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
 p { margin: 4px 0; }
 img { max-width: 100%; }
-.sig-block { margin-top: 30px; page-break-inside: avoid; }
-.sig-row { display: flex; align-items: flex-end; gap: 40px; margin: 16px 0; }
-.sig-item { }
-.sig-img { height: 50px; object-fit: contain; display: block; }
-.sig-line { border-top: 1px solid #333; width: 200px; margin-top: 2px; padding-top: 2px; font-size: 11px; color: #444; }
-.header-sig { text-align: right; margin-bottom: 20px; }
 @media print { body { padding: 20px 40px; } }
 </style></head><body>
-<div class="header-sig">
-  <p>Бекітемін:</p>
-  <p>Директордың оқу-тәрбие жұмысы жөніндегі орынбасары</p>
-  ${doc.admin_signature ? `<img src="${doc.admin_signature}" class="sig-img" style="margin-left:auto"/>` : ''}
-  <p>__________А.Абдраймова</p>
-  <p>${doc.approved_at ? new Date(doc.approved_at).toLocaleDateString('ru-RU') : '__________'} 2026 ж.</p>
-</div>
-
 ${wordHtml}
-
-<div class="sig-block">
-  <div class="sig-row">
-    <div class="sig-item">
-      <p style="font-size:12px;color:#555;">Келісілді:</p>
-      ${doc.admin_signature ? `<img src="${doc.admin_signature}" class="sig-img"/>` : ''}
-      <div class="sig-line">Сонурова М.М.</div>
-    </div>
-    <div class="sig-item">
-      <p style="font-size:12px;color:#555;">Топ жетекшісі:</p>
-      ${doc.curator_signature ? `<img src="${doc.curator_signature}" class="sig-img"/>` : ''}
-      <div class="sig-line">${doc.curator_name}</div>
-    </div>
-  </div>
-</div>
 </body></html>`;
 }

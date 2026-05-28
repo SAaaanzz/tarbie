@@ -5,7 +5,7 @@ import { ERROR_CODES } from '@tarbie/shared';
 // Global cap on JSON body size to prevent a single malicious caller from forcing
 // the worker to buffer huge payloads in memory. The avatar endpoint already
 // enforces its own ~200 KB limit; everything else easily fits in 1 MB.
-const DEFAULT_MAX_BODY_BYTES = 1_000_000;
+const DEFAULT_MAX_BODY_BYTES = 10_000_000;
 
 export function bodyLimit(maxBytes = DEFAULT_MAX_BODY_BYTES) {
   return createMiddleware<HonoEnv>(async (c, next) => {

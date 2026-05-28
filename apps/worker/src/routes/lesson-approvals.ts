@@ -259,11 +259,7 @@ lessonApprovals.get('/:id/document', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Not found' }, 404);
   }
 
-  if (approval.status !== 'approved') {
-    return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Not yet approved' }, 400);
-  }
-
-  // Get signatures
+  // Get signatures (only if approved; for pending - return nulls)
   let curatorSignature: string | null = null;
   let adminSignature: string | null = null;
 
@@ -274,7 +270,7 @@ lessonApprovals.get('/:id/document', async (c) => {
     curatorSignature = cs?.signature_data || null;
   }
 
-  if (approval.approved_by) {
+  if (approval.status === 'approved' && approval.approved_by) {
     const as2 = await c.env.DB.prepare(
       'SELECT signature_data FROM user_signatures WHERE user_id = ?'
     ).bind(approval.approved_by).first<{ signature_data: string }>();
@@ -315,12 +311,9 @@ lessonApprovals.get('/:id/file', async (c) => {
     return c.json({ success: false, message: 'File not found in storage' }, 404);
   }
 
-  return new Response(value as ArrayBuffer, {
-    headers: {
-      'Content-Type': metadata?.contentType || 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${approval.word_file_name}"`,
-    },
-  });
+  c.header('Content-Type', metadata?.contentType || 'application/octet-stream');
+  c.header('Content-Disposition', `attachment; filename="${approval.word_file_name}"`);
+  return c.body(value as ArrayBuffer);
 });
 
 export { lessonApprovals };

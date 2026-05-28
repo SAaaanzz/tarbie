@@ -4,9 +4,11 @@ import type { HonoEnv } from '../env.js';
 export const corsMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   const origin = c.req.header('Origin') ?? '';
   const appUrl = c.env.APP_URL ?? '';
-  const allowedOrigins = [appUrl, 'https://tarbie.online', 'http://localhost:5173'].filter(Boolean);
+  const allowedOrigins = [appUrl, 'https://tarbie.online', 'https://tarbie-sagaty.pages.dev', 'https://tarbie-online.pages.dev', 'https://tarbie-web.pages.dev', 'http://localhost:5173'].filter(Boolean);
+  // Also allow *.pages.dev subdomains (preview deployments)
+  const isPagesPreview = /^https:\/\/[a-z0-9-]+\.tarbie-sagaty\.pages\.dev$/.test(origin);
   
-  const isAllowed = allowedOrigins.includes(origin);
+  const isAllowed = allowedOrigins.includes(origin) || isPagesPreview;
   const allowOrigin = isAllowed && origin ? origin : (allowedOrigins[0] ?? '*');
 
   if (c.req.method === 'OPTIONS') {
