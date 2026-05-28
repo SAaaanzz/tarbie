@@ -9,6 +9,70 @@ const lessonApprovals = new Hono<HonoEnv>();
 
 lessonApprovals.use('*', authMiddleware);
 
+// ── Diagnostic: test file upload/download round-trip ──
+lessonApprovals.post('/test-upload', requireRole('admin'), async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get('file') as File | null;
+  if (!file) return c.json({ success: false, message: 'No file' }, 400);
+
+  const arrayBuffer = await file.arrayBuffer();
+  const originalSize = arrayBuffer.byteLength;
+
+  // Read first 4 bytes (PK\x03\x04 for ZIP/DOCX)
+  const header = new Uint8Array(arrayBuffer.slice(0, 4));
+  const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+  // Store as base64 string
+  const uint8 = new Uint8Array(arrayBuffer);
+  let binaryStr = '';
+  for (let i = 0; i < uint8.length; i++) {
+    binaryStr += String.fromCharCode(uint8[i]!);
+  }
+  const base64 = btoa(binaryStr);
+  const base64Size = base64.length;
+
+  // Store in KV
+  const testKey = `test-upload:${Date.now()}`;
+  await c.env.KV.put(testKey, base64);
+
+  // Read back immediately
+  const readBack = await c.env.KV.get(testKey, { type: 'text' });
+  const readBackSize = readBack?.length ?? 0;
+  const base64Match = base64 === readBack;
+
+  // Decode back to binary
+  let decodedSize = 0;
+  let decodedHeaderHex = '';
+  if (readBack) {
+    const decoded = atob(readBack);
+    decodedSize = decoded.length;
+    const decodedBytes = new Uint8Array(4);
+    for (let i = 0; i < 4 && i < decoded.length; i++) {
+      decodedBytes[i] = decoded.charCodeAt(i);
+    }
+    decodedHeaderHex = Array.from(decodedBytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+  }
+
+  // Clean up
+  await c.env.KV.delete(testKey);
+
+  return c.json({
+    success: true,
+    data: {
+      fileName: file.name,
+      fileType: file.type,
+      originalSize,
+      headerHex,
+      base64Size,
+      readBackSize,
+      base64Match,
+      decodedSize,
+      decodedHeaderHex,
+      isValidDocx: headerHex === '50 4b 03 04',
+    },
+  });
+});
+
 // ── Curator: submit lesson for approval (upload Word file) ──
 lessonApprovals.post('/', requireRole('teacher'), async (c) => {
   const user = c.get('user');
@@ -50,16 +114,12 @@ lessonApprovals.post('/', requireRole('teacher'), async (c) => {
   // Upload file to KV as base64 string
   const fileKey = `lesson-approvals:${generateId()}_${file.name}`;
   const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  // Chunked base64 encoding to avoid stack overflow on large files
-  let binary = '';
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  const uint8 = new Uint8Array(arrayBuffer);
+  let binaryStr = '';
+  for (let i = 0; i < uint8.length; i++) {
+    binaryStr += String.fromCharCode(uint8[i]!);
   }
-  const base64 = btoa(binary);
-  await c.env.KV.put(fileKey, base64, { metadata: { contentType: file.type, fileName: file.name } });
+  await c.env.KV.put(fileKey, btoa(binaryStr), { metadata: { contentType: file.type, fileName: file.name } });
 
   const now = new Date().toISOString();
   const id = generateId();
