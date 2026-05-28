@@ -1,13 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
-  Download, Eye,
+  Download,
 } from 'lucide-react';
-import mammoth from 'mammoth';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';
+
+function getToken(): string {
+  try {
+    const raw = localStorage.getItem('tarbie-auth');
+    if (raw) return JSON.parse(raw).state?.token ?? '';
+  } catch { /* ignore */ }
+  return '';
+}
 
 interface ApprovalRow {
   id: string;
@@ -23,18 +30,6 @@ interface ApprovalRow {
   curator_name?: string;
 }
 
-interface DocumentData {
-  id: string;
-  topic: string;
-  planned_date: string;
-  curator_name: string;
-  admin_name: string;
-  approved_at: string;
-  curator_signature: string | null;
-  admin_signature: string | null;
-  status: string;
-}
-
 export function LessonApprovalsPage() {
   const { user, lang } = useAuthStore();
   const isAdmin = user?.role === 'admin';
@@ -44,7 +39,6 @@ export function LessonApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
   const [submitting, setSubmitting] = useState<string | null>(null);
-  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
 
   const loadApprovals = () => {
     setLoading(true);
@@ -82,59 +76,28 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const [wordHtml, setWordHtml] = useState<string>('');
-  const [loadingDoc, setLoadingDoc] = useState(false);
-
-  const handleViewDocument = async (id: string) => {
-    setLoadingDoc(true);
+  const handleDownload = async (id: string, fileName: string) => {
     try {
-      // Fetch document metadata (signatures)
-      const doc = await api.get<DocumentData>(`/api/lesson-approvals/${id}/document`);
-      setViewDoc(doc);
-
-      // Fetch the actual Word file and convert to HTML
-      const token = localStorage.getItem('token');
-      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!fileRes.ok) {
-        const errText = await fileRes.text();
-        throw new Error(`File download failed (${fileRes.status}): ${errText.slice(0, 200)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Ошибка скачивания (${res.status}): ${text.slice(0, 150)}`);
+        return;
       }
-      const arrayBuffer = await fileRes.arrayBuffer();
-      // Verify it's a valid DOCX (ZIP starts with PK\x03\x04)
-      const headerView = new Uint8Array(arrayBuffer.slice(0, 4));
-      if (headerView[0] !== 0x50 || headerView[1] !== 0x4b) {
-        throw new Error(`Invalid file: expected DOCX but got ${headerView[0]?.toString(16)} ${headerView[1]?.toString(16)} (size: ${arrayBuffer.byteLength})`);
-      }
-      const result = await mammoth.convertToHtml(
-        { arrayBuffer },
-        { convertImage: mammoth.images.imgElement((image) => {
-          return image.read('base64').then((imageBuffer) => {
-            return { src: `data:${image.contentType};base64,${imageBuffer}` };
-          });
-        })}
-      );
-
-      // Inject signatures into the Word HTML where underscores are
-      let html = result.value;
-      html = injectSignatures(html, doc);
-      setWordHtml(html);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setLoadingDoc(false);
+      alert(err instanceof Error ? err.message : 'Ошибка');
     }
   };
-
-  const downloadPdf = useCallback(() => {
-    if (!viewDoc || !wordHtml) return;
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(generatePdfHtml(viewDoc, wordHtml));
-    w.document.close();
-    setTimeout(() => w.print(), 500);
-  }, [viewDoc, wordHtml]);
 
   const statusBadge = (status: string) => {
     switch (status) {
@@ -210,34 +173,12 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download Word file for review */}
+                  {/* Download Word file */}
                   <button
                     className="rounded-lg p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
                     title={lang === 'kz' ? 'Word файлды жүктеу' : 'Скачать Word файл'}
-                    onClick={() => {
-                      const token = localStorage.getItem('token');
-                      fetch(`${API_BASE}/api/lesson-approvals/${a.id}/file`, {
-                        headers: { Authorization: `Bearer ${token}` },
-                      }).then(r => r.blob()).then(blob => {
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = a.word_file_name;
-                        link.click();
-                        URL.revokeObjectURL(url);
-                      });
-                    }}>
+                    onClick={() => handleDownload(a.id, a.word_file_name)}>
                     <Download size={16} />
-                  </button>
-                  {/* Preview document (with signatures if approved) */}
-                  <button onClick={() => handleViewDocument(a.id)}
-                    className={`rounded-lg p-2 transition-colors ${a.status === 'approved'
-                      ? 'text-green-600 bg-green-50 hover:bg-green-100'
-                      : 'text-gray-600 bg-gray-50 hover:bg-gray-100'}`}
-                    title={a.status === 'approved'
-                      ? (lang === 'kz' ? 'PDF құжатты көру (қолтаңбамен)' : 'Просмотр PDF с подписями')
-                      : (lang === 'kz' ? 'Құжатты көру' : 'Предпросмотр документа')}>
-                    <Eye size={16} />
                   </button>
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
@@ -260,86 +201,6 @@ export function LessonApprovalsPage() {
           ))}
         </div>
       )}
-
-      {/* Document preview modal */}
-      {(viewDoc || loadingDoc) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-            {loadingDoc ? (
-              <div className="flex justify-center py-20"><Loader2 size={32} className="animate-spin text-primary-600" /></div>
-            ) : viewDoc && (
-              <>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    {lang === 'kz' ? 'Бекітілген құжат' : 'Утверждённый документ'}
-                  </h2>
-                  <div className="flex gap-2">
-                    <button onClick={downloadPdf}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                      <Download size={16} />
-                      PDF
-                    </button>
-                    <button onClick={() => { setViewDoc(null); setWordHtml(''); }}
-                      className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
-                      <XCircle size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Render the actual Word document as-is, with signatures injected inline */}
-                <div className="border border-gray-200 rounded-lg bg-white px-8 py-6 prose prose-sm max-w-none [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_img]:max-w-full"
-                  dangerouslySetInnerHTML={{ __html: wordHtml }}
-                />
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
-}
-
-// Inject signature images into the Word HTML where underscore patterns appear
-function injectSignatures(html: string, doc: DocumentData): string {
-  const sigImg = (src: string | null) =>
-    src ? `<img src="${src}" style="height:40px;object-fit:contain;display:inline-block;vertical-align:bottom;margin:0 4px"/>` : '';
-
-  // Replace underscore lines before "А.Абдраймова" with admin signature
-  // Pattern: __________А.Абдраймова or variants
-  html = html.replace(
-    /_{3,}\s*А\.?\s*Абдраймова/g,
-    `${sigImg(doc.admin_signature)} А.Абдраймова`
-  );
-
-  // Replace underscore lines before curator name (Топ жетекшісі: _________)
-  html = html.replace(
-    /(Топ жетекшісі:\s*)_{3,}/g,
-    `$1${sigImg(doc.curator_signature)}`
-  );
-
-  // Replace standalone date underscore lines near "2026" (admin approval date)
-  if (doc.approved_at) {
-    const dateStr = new Date(doc.approved_at).toLocaleDateString('ru-RU');
-    html = html.replace(
-      /_{3,}(\s*2026\s*ж\.?)/g,
-      `${dateStr}$1`
-    );
-  }
-
-  return html;
-}
-
-function generatePdfHtml(doc: DocumentData, wordHtml: string): string {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${doc.topic}</title>
-<style>
-body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.6; }
-table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-td, th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
-p { margin: 4px 0; }
-img { max-width: 100%; }
-@media print { body { padding: 20px 40px; } }
-</style></head><body>
-${wordHtml}
-</body></html>`;
 }
