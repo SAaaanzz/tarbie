@@ -6,6 +6,8 @@ import {
   Download, Eye,
 } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';
+
 interface ApprovalRow {
   id: string;
   session_id: string;
@@ -172,18 +174,39 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Download Word file for review */}
+                  <button
+                    className="rounded-lg p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                    title={lang === 'kz' ? 'Word файлды жүктеу' : 'Скачать Word файл'}
+                    onClick={() => {
+                      const token = localStorage.getItem('token');
+                      fetch(`${API_BASE}/api/lesson-approvals/${a.id}/file`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                      }).then(r => r.blob()).then(blob => {
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = a.word_file_name;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                      });
+                    }}>
+                    <Download size={16} />
+                  </button>
+                  {/* View signed PDF after approval */}
                   {a.status === 'approved' && (
                     <button onClick={() => handleViewDocument(a.id)}
                       className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'Құжатты көру' : 'Просмотр документа'}>
+                      title={lang === 'kz' ? 'PDF құжатты көру' : 'Просмотр PDF с подписями'}>
                       <Eye size={16} />
                     </button>
                   )}
+                  {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
                       <button onClick={() => handleApprove(a.id)} disabled={submitting === a.id}
                         className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                        title={lang === 'kz' ? 'Бекіту' : 'Одобрить'}>
+                        title={lang === 'kz' ? 'Бекіту және қол қою' : 'Одобрить и подписать'}>
                         {submitting === a.id ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                       </button>
                       <button onClick={() => handleReject(a.id)} disabled={submitting === a.id}

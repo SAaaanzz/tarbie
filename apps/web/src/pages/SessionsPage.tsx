@@ -1397,10 +1397,14 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
     setRoom(r.displayName);
   };
 
+  const { user } = useAuthStore();
+  const isCurator = user?.role === 'teacher';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!timeSlot) { setError(lang === 'kz' ? 'Уақытты таңдаңыз' : 'Выберите время'); return; }
     if (!room) { setError(lang === 'kz' ? 'Аудиторияны таңдаңыз' : 'Выберите аудиторию'); return; }
+    if (isCurator && !wordFile) { setError(lang === 'kz' ? 'Word файлды тіркеңіз' : 'Прикрепите Word файл'); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -1620,6 +1624,7 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               <Upload size={14} className="inline mr-1" />
               {lang === 'kz' ? 'Word файл (бекіту үшін)' : 'Word файл (для утверждения)'}
+              {isCurator && <span className="text-red-500 ml-0.5">*</span>}
             </label>
             <input
               type="file"

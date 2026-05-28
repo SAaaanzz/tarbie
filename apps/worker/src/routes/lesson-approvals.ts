@@ -47,12 +47,10 @@ lessonApprovals.post('/', requireRole('teacher'), async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Already pending approval' }, 400);
   }
 
-  // Upload file to R2
-  const fileKey = `lesson-approvals/${generateId()}_${file.name}`;
+  // Upload file to KV (binary as ArrayBuffer)
+  const fileKey = `lesson-approvals:${generateId()}_${file.name}`;
   const arrayBuffer = await file.arrayBuffer();
-  await c.env.AVATARS.put(fileKey, arrayBuffer, {
-    httpMetadata: { contentType: file.type },
-  });
+  await c.env.KV.put(fileKey, arrayBuffer, { metadata: { contentType: file.type, fileName: file.name } });
 
   const now = new Date().toISOString();
   const id = generateId();
@@ -312,14 +310,14 @@ lessonApprovals.get('/:id/file', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Not found' }, 404);
   }
 
-  const obj = await c.env.AVATARS.get(approval.word_file_url);
-  if (!obj) {
+  const { value, metadata } = await c.env.KV.getWithMetadata<{ contentType?: string; fileName?: string }>(approval.word_file_url, { type: 'arrayBuffer' });
+  if (!value) {
     return c.json({ success: false, message: 'File not found in storage' }, 404);
   }
 
-  return new Response(obj.body, {
+  return new Response(value as ArrayBuffer, {
     headers: {
-      'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+      'Content-Type': metadata?.contentType || 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${approval.word_file_name}"`,
     },
   });
