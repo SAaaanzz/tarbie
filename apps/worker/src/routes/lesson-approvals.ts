@@ -375,21 +375,28 @@ lessonApprovals.get('/:id/file', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Not found' }, 404);
   }
 
-  const { value, metadata } = await c.env.KV.getWithMetadata<{ contentType?: string; fileName?: string }>(approval.word_file_url, { type: 'text' });
-  if (!value) {
+  const base64Value = await c.env.KV.get(approval.word_file_url, { type: 'text' });
+  if (!base64Value) {
     return c.json({ success: false, message: 'File not found in storage' }, 404);
   }
 
   // Decode base64 back to binary
-  const binaryStr = atob(value as string);
+  const binaryStr = atob(base64Value);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i++) {
     bytes[i] = binaryStr.charCodeAt(i);
   }
 
-  c.header('Content-Type', metadata?.contentType || 'application/octet-stream');
-  c.header('Content-Disposition', `attachment; filename="${approval.word_file_name}"`);
-  return c.body(bytes.buffer);
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(approval.word_file_name)}"`,
+      'Content-Length': String(bytes.length),
+      'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+      'Access-Control-Allow-Credentials': 'true',
+    },
+  });
 });
 
 export { lessonApprovals };

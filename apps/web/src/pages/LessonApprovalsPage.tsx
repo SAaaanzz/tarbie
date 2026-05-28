@@ -94,10 +94,19 @@ export function LessonApprovalsPage() {
 
       // Fetch the actual Word file and convert to HTML
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const arrayBuffer = await res.arrayBuffer();
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        throw new Error(`File download failed (${fileRes.status}): ${errText.slice(0, 200)}`);
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      // Verify it's a valid DOCX (ZIP starts with PK\x03\x04)
+      const headerView = new Uint8Array(arrayBuffer.slice(0, 4));
+      if (headerView[0] !== 0x50 || headerView[1] !== 0x4b) {
+        throw new Error(`Invalid file: expected DOCX but got ${headerView[0]?.toString(16)} ${headerView[1]?.toString(16)} (size: ${arrayBuffer.byteLength})`);
+      }
       const result = await mammoth.convertToHtml(
         { arrayBuffer },
         { convertImage: mammoth.images.imgElement((image) => {
