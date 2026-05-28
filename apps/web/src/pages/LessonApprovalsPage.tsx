@@ -5,6 +5,7 @@ import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
   Download,
 } from 'lucide-react';
+import mammoth from 'mammoth';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';
 
@@ -30,6 +31,18 @@ interface ApprovalRow {
   curator_name?: string;
 }
 
+interface DocumentData {
+  id: string;
+  topic: string;
+  planned_date: string;
+  curator_name: string;
+  admin_name: string;
+  approved_at: string;
+  curator_signature: string | null;
+  admin_signature: string | null;
+  status: string;
+}
+
 export function LessonApprovalsPage() {
   const { user, lang } = useAuthStore();
   const isAdmin = user?.role === 'admin';
@@ -39,6 +52,7 @@ export function LessonApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
 
   const loadApprovals = () => {
     setLoading(true);
@@ -76,26 +90,55 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const handleDownload = async (id: string, fileName: string) => {
+  const handleDownloadPdf = async (id: string) => {
+    setDownloadingPdf(id);
     try {
       const token = getToken();
-      const res = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+
+      // 1. Get signatures/metadata
+      const doc = await api.get<DocumentData>(`/api/lesson-approvals/${id}/document`);
+
+      // 2. Download the Word file
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) {
-        const text = await res.text();
-        alert(`Ошибка скачивания (${res.status}): ${text.slice(0, 150)}`);
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
         return;
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      link.click();
-      URL.revokeObjectURL(url);
+      const arrayBuffer = await fileRes.arrayBuffer();
+
+      // 3. Convert Word to HTML
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer },
+        {
+          convertImage: mammoth.images.imgElement((image) =>
+            image.read('base64').then((buf) => ({
+              src: `data:${image.contentType};base64,${buf}`,
+            }))
+          ),
+        }
+      );
+
+      // 4. Inject signatures into the HTML
+      let html = result.value;
+      html = injectSignatures(html, doc);
+
+      // 5. Open in new window for Print → Save as PDF
+      const pdfHtml = buildPdfPage(doc.topic, html);
+      const w = window.open('', '_blank');
+      if (!w) {
+        alert('Разрешите всплывающие окна для сохранения PDF');
+        return;
+      }
+      w.document.write(pdfHtml);
+      w.document.close();
+      setTimeout(() => w.print(), 600);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setDownloadingPdf(null);
     }
   };
 
@@ -173,13 +216,16 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download Word file */}
-                  <button
-                    className="rounded-lg p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
-                    title={lang === 'kz' ? 'Word файлды жүктеу' : 'Скачать Word файл'}
-                    onClick={() => handleDownload(a.id, a.word_file_name)}>
-                    <Download size={16} />
-                  </button>
+                  {/* Download PDF with signatures */}
+                  {a.status === 'approved' && (
+                    <button
+                      className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
+                      title={lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями'}
+                      disabled={downloadingPdf === a.id}
+                      onClick={() => handleDownloadPdf(a.id)}>
+                      {downloadingPdf === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    </button>
+                  )}
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
@@ -203,4 +249,50 @@ export function LessonApprovalsPage() {
       )}
     </div>
   );
+}
+
+// ── Helpers ──
+
+function injectSignatures(html: string, doc: DocumentData): string {
+  const sigImg = (src: string | null) =>
+    src ? `<img src="${src}" style="height:48px;object-fit:contain;display:inline-block;vertical-align:bottom;margin:0 4px"/>` : '';
+
+  // Replace underscore lines before "А.Абдраймова" with admin signature
+  html = html.replace(
+    /_{3,}\s*А\.?\s*Абдраймова/g,
+    `${sigImg(doc.admin_signature)} А.Абдраймова`
+  );
+
+  // Replace underscore lines after "Топ жетекшісі:" with curator signature
+  html = html.replace(
+    /(Топ жетекшісі:\s*)_{3,}/g,
+    `$1${sigImg(doc.curator_signature)}`
+  );
+
+  // Replace date underscores near year
+  if (doc.approved_at) {
+    const d = new Date(doc.approved_at);
+    const dateStr = d.toLocaleDateString('ru-RU');
+    html = html.replace(
+      /_{3,}(\s*20\d{2}\s*ж\.?)/g,
+      `${dateStr}$1`
+    );
+  }
+
+  return html;
+}
+
+function buildPdfPage(title: string, bodyHtml: string): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.6; color: #000; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+td, th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+p { margin: 4px 0; }
+img { max-width: 100%; }
+@media print { body { padding: 20px 40px; } }
+</style></head><body>
+${bodyHtml}
+</body></html>`;
 }
