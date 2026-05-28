@@ -14,8 +14,13 @@ id = "4302997f858144d481fade050ff55e8b"
 
 [[queues.consumers]]
 queue = "tarbie-notifications"
-max_batch_size = 10
+max_batch_size = 25
 max_batch_timeout = 5
+# Telegram global limit ~30 msg/sec. With max_concurrency=1 and ~25 msg/sec inside one
+# isolate, we stay below the limit without needing a KV-based counter. If we hit a 429
+# the consumer surfaces retry_after from Telegram and the queue retries with that delay.
+max_concurrency = 1
+max_retries = 3
 
 [vars]
 ENVIRONMENT = "production"

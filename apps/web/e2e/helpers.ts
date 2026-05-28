@@ -32,6 +32,7 @@ export const STUDENT_USER = {
   premium: false,
 };
 
+
 const FAKE_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1X2FkbWluXzAwMSJ9.fake';
 
 /** Sample data returned by mocked API endpoints */

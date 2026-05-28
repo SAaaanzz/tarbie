@@ -21,3 +21,21 @@ export function rateLimit(maxRequests: number, windowSeconds: number) {
     await next();
   });
 }
+
+// Imperative rate-limit check that route handlers can run AFTER parsing the
+// request body (e.g. to throttle by phone instead of IP). Returns true when the
+// caller is over the limit and should bail out with a 429.
+export async function isOverLimit(
+  kv: KVNamespace,
+  bucket: string,
+  identifier: string,
+  maxRequests: number,
+  windowSeconds: number
+): Promise<boolean> {
+  const key = `rl:${bucket}:${identifier}`;
+  const current = await kv.get(key);
+  const count = current ? parseInt(current, 10) : 0;
+  if (count >= maxRequests) return true;
+  await kv.put(key, String(count + 1), { expirationTtl: windowSeconds });
+  return false;
+}

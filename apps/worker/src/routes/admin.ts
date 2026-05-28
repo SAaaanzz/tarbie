@@ -418,7 +418,7 @@ admin.put('/users/:id', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'lang must be kz or ru' }, 400);
   }
   // Validate role if provided
-  const validRoles = ['admin', 'teacher', 'student', 'parent'];
+  const validRoles = ['admin', 'teacher', 'student'];
   if (body.role && !validRoles.includes(body.role)) {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid role' }, 400);
   }
@@ -890,12 +890,65 @@ admin.post('/test-token', async (c) => {
   }
 
   const token = await signJwt(
-    { sub: targetUser.id, role: targetUser.role as 'admin' | 'teacher' | 'student' | 'parent', school_id: targetUser.school_id },
+    { sub: targetUser.id, role: targetUser.role as 'admin' | 'teacher' | 'student', school_id: targetUser.school_id },
     c.env.JWT_SECRET,
     3600
   );
 
   return c.json({ success: true, data: { token, user_id: targetUser.id, role: targetUser.role } });
+});
+
+// One-shot migration of legacy KV-stored avatars to R2. Idempotent: safely skips
+// users whose avatar already exists in R2, and deletes the KV copy on success.
+// Caller passes ?limit=N to bound the batch (KV list is paginated by Cloudflare).
+admin.post('/migrate-avatars', async (c) => {
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1000);
+  const cursor = c.req.query('cursor') ?? undefined;
+
+  const listed = await c.env.KV.list({ prefix: 'avatar:', limit, cursor });
+
+  let migrated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const key of listed.keys) {
+    const userId = key.name.slice('avatar:'.length);
+    try {
+      // If R2 already has the avatar, just clean up KV.
+      const existing = await c.env.AVATARS.head(userId);
+      if (existing) {
+        await c.env.KV.delete(key.name);
+        skipped++;
+        continue;
+      }
+
+      const data = await c.env.KV.get(key.name);
+      if (!data) { skipped++; continue; }
+      const match = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+      if (!match) { failed++; continue; }
+      const contentType = match[1]!;
+      const bytes = Uint8Array.from(atob(match[2]!), ch => ch.charCodeAt(0));
+
+      await c.env.AVATARS.put(userId, bytes, {
+        httpMetadata: { contentType, cacheControl: 'public, max-age=86400' },
+      });
+      await c.env.KV.delete(key.name);
+      migrated++;
+    } catch {
+      failed++;
+    }
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      migrated,
+      skipped,
+      failed,
+      list_complete: listed.list_complete,
+      cursor: listed.list_complete ? null : listed.cursor,
+    },
+  });
 });
 
 export default admin;

@@ -6,7 +6,7 @@ import {
   ClipboardList, Lightbulb, RefreshCw, AlertTriangle,
 } from 'lucide-react';
 
-type PromptCategory = 'topics' | 'plan' | 'activity' | 'advice' | 'parents' | 'document';
+type PromptCategory = 'topics' | 'plan' | 'activity' | 'advice' | 'document';
 
 interface GeneratedContent {
   category: PromptCategory;
@@ -40,15 +40,8 @@ const PROMPT_TEMPLATES: Record<PromptCategory, { icon: JSX.Element; labelRu: str
     icon: <Lightbulb size={18} />,
     labelRu: 'Советы куратору',
     labelKz: 'Кураторға кеңес',
-    placeholderRu: 'Опишите ситуацию (ученик пропускает, конфликт в группе...)',
-    placeholderKz: 'Жағдайды сипаттаңыз (оқушы босатады, топта қақтығыс...)',
-  },
-  parents: {
-    icon: <Lightbulb size={18} />,
-    labelRu: 'Работа с родителями',
-    labelKz: 'Ата-аналармен жұмыс',
-    placeholderRu: 'Ситуация (собрание, жалоба родителя, неуспевающий...)',
-    placeholderKz: 'Жағдай (жиналыс, ата-ана шағымы, үлгерімсіз...)',
+    placeholderRu: 'Опишите ситуацию (студент пропускает, конфликт в группе...)',
+    placeholderKz: 'Жағдайды сипаттаңыз (студент босатады, топта қақтығыс...)',
   },
   document: {
     icon: <ClipboardList size={18} />,

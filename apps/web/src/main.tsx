@@ -21,10 +21,12 @@ import { MyCoursesPage } from './pages/MyCoursesPage';
 import { CourseBuilderPage } from './pages/CourseBuilderPage';
 import { TestRunnerPage } from './pages/TestRunnerPage';
 import { StudentReviewPage } from './pages/StudentReviewPage';
+import { LessonApprovalsPage } from './pages/LessonApprovalsPage';
 import { api } from './lib/api';
 import { subscribe, getPath, getSearchParam } from './lib/router';
 import { GraduationCap, Plus, Loader2, Users, UserPlus, BookOpen, Trash2, X, Eye, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Search, Download, Edit3, Crown } from 'lucide-react';
 import { Avatar } from './components/Avatar';
+import { SignatureModal } from './components/SignatureModal';
 import type { Lang } from '@tarbie/shared';
 import './index.css';
 
@@ -105,6 +107,8 @@ function Router({ path }: { path: string }) {
       return hasRole('admin', 'teacher') ? <CourseBuilderPage courseId={getSearchParam('id')} /> : <AccessDenied />;
     case '/my-courses':
       return <MyCoursesPage />;
+    case '/lesson-approvals':
+      return hasRole('admin', 'teacher') ? <LessonApprovalsPage /> : <AccessDenied />;
     case '/test-runner':
       return hasRole('admin') ? <TestRunnerPage /> : <AccessDenied />;
     default:
@@ -126,8 +130,10 @@ function LoadingScreen() {
 }
 
 function App() {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, user, lang } = useAuthStore();
   const [path, setPath] = useState(getPath());
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [, setSignatureChecked] = useState(false);
 
   useEffect(() => {
     const unsub = subscribe(() => setPath(getPath()));
@@ -135,6 +141,22 @@ function App() {
     window.addEventListener('popstate', onPop);
     return () => { unsub(); window.removeEventListener('popstate', onPop); };
   }, []);
+
+  // Check if user needs to set signature (first login for curator/admin)
+  useEffect(() => {
+    if (!isAuthenticated || !user || user.role === 'student') {
+      setSignatureChecked(true);
+      return;
+    }
+    api.get<{ has_signature: boolean; required: boolean }>('/api/signatures/check')
+      .then((res) => {
+        if (res.required && !res.has_signature) {
+          setShowSignatureModal(true);
+        }
+        setSignatureChecked(true);
+      })
+      .catch(() => setSignatureChecked(true));
+  }, [isAuthenticated, user]);
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -145,9 +167,17 @@ function App() {
   }
 
   return (
-    <Layout>
-      <Router path={path} />
-    </Layout>
+    <>
+      {showSignatureModal && (
+        <SignatureModal
+          lang={lang}
+          onComplete={() => setShowSignatureModal(false)}
+        />
+      )}
+      <Layout>
+        <Router path={path} />
+      </Layout>
+    </>
   );
 }
 
@@ -169,9 +199,8 @@ interface UserRow {
 function roleLabel(role: string, lang: Lang) {
   const map: Record<string, Record<string, string>> = {
     admin: { kz: 'Әкімші', ru: 'Администратор' },
-    teacher: { kz: 'Мұғалім', ru: 'Учитель' },
-    student: { kz: 'Оқушы', ru: 'Ученик' },
-    parent: { kz: 'Ата-ана', ru: 'Родитель' },
+    teacher: { kz: 'Куратор', ru: 'Куратор' },
+    student: { kz: 'Студент', ru: 'Студент' },
   };
   return map[role]?.[lang] ?? role;
 }
@@ -212,7 +241,7 @@ function AdminUsersPage() {
     return true;
   });
 
-  const roleCounts: Record<string, number> = { all: users.length, admin: 0, teacher: 0, student: 0, parent: 0 };
+  const roleCounts: Record<string, number> = { all: users.length, admin: 0, teacher: 0, student: 0 };
   for (const u of users) { if (u.role in roleCounts) roleCounts[u.role]!++; }
 
   const exportUsers = async () => {
@@ -273,7 +302,7 @@ function AdminUsersPage() {
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div className="flex gap-1 rounded-lg bg-gray-100 p-1 overflow-x-auto scrollbar-hide">
-          {(['all', 'teacher', 'student', 'admin', 'parent'] as const).map(r => (
+          {(['all', 'teacher', 'student', 'admin'] as const).map(r => (
             <button key={r} onClick={() => setRoleFilter(r)}
               className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${roleFilter === r ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {r === 'all' ? (lang === 'kz' ? 'Бәрі' : 'Все') : roleLabel(r, lang)} ({(roleCounts as Record<string, number>)[r]})
@@ -499,9 +528,8 @@ function CreateUserModal({ lang, apiBase, isTeacher, onClose, onCreated }: {
                 {lang === 'kz' ? 'Рөлі' : 'Роль'}
               </label>
               <select className="input-field" value={role} onChange={(e) => setRole(e.target.value)}>
-                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
-                <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
-                <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
+                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Куратор' : 'Куратор'}</option>}
+                <option value="student">{lang === 'kz' ? 'Студент' : 'Студент'}</option>
                 {!isTeacher && <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>}
               </select>
             </div>
@@ -582,9 +610,8 @@ function EditUserModal({ lang, apiBase, isTeacher, user, onClose, onSaved }: {
                 {lang === 'kz' ? 'Рөлі' : 'Роль'}
               </label>
               <select className="input-field" value={role} onChange={(e) => setRole(e.target.value)}>
-                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
-                <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
-                <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
+                {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Куратор' : 'Куратор'}</option>}
+                <option value="student">{lang === 'kz' ? 'Студент' : 'Студент'}</option>
                 {!isTeacher && <option value="admin">{lang === 'kz' ? 'Әкімші' : 'Администратор'}</option>}
               </select>
             </div>
@@ -1032,7 +1059,6 @@ function BulkImportModal({ lang, apiBase, isTeacher, onClose, onDone }: {
                   <select className="input-field text-sm" value={simpleRole} onChange={(e) => setSimpleRole(e.target.value)}>
                     <option value="student">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</option>
                     {!isTeacher && <option value="teacher">{lang === 'kz' ? 'Мұғалім' : 'Учитель'}</option>}
-                    <option value="parent">{lang === 'kz' ? 'Ата-ана' : 'Родитель'}</option>
                   </select>
                 </div>
               )}

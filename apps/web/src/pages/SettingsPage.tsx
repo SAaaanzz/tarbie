@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
-import { Bell, MessageSquare, Globe, Check, ExternalLink, ClipboardList, Loader2, Save, Headset } from 'lucide-react';
+import { Bell, MessageSquare, Globe, Check, ExternalLink, ClipboardList, Loader2, Save, Headset, PenTool } from 'lucide-react';
+import { SignaturePad } from '../components/SignaturePad';
 
 export function SettingsPage() {
   const { user, lang, setLang } = useAuthStore();
@@ -158,15 +159,97 @@ export function SettingsPage() {
             <dt className="text-sm text-gray-500">{lang === 'kz' ? 'Рөлі' : 'Роль'}</dt>
             <dd className="text-sm font-medium text-gray-900">
               {user?.role === 'admin' ? (lang === 'kz' ? 'Әкімші' : 'Администратор') :
-               user?.role === 'teacher' ? (lang === 'kz' ? 'Мұғалім' : 'Учитель') :
-               user?.role === 'student' ? (lang === 'kz' ? 'Оқушы' : 'Ученик') :
-               lang === 'kz' ? 'Ата-ана' : 'Родитель'}
+               user?.role === 'teacher' ? 'Куратор' :
+               user?.role === 'student' ? 'Студент' : ''}
             </dd>
           </div>
         </dl>
       </div>
+      {(user?.role === 'admin' || user?.role === 'teacher') && <SignatureSettings lang={lang} />}
       {user?.role === 'admin' && <SupportAdminSettings lang={lang} />}
       {user?.role === 'admin' && <AdminChangeLog lang={lang} />}
+    </div>
+  );
+}
+
+/* ─── Signature Settings ─── */
+
+function SignatureSettings({ lang }: { lang: 'kz' | 'ru' }) {
+  const [currentSignature, setCurrentSignature] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<{ signature_data: string } | null>('/api/signatures/me')
+      .then((res) => { setCurrentSignature(res?.signature_data || null); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (signatureData: string) => {
+    try {
+      await api.post('/api/signatures/me', { signature_data: signatureData });
+      setCurrentSignature(signatureData);
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+          <PenTool size={20} />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">
+            {lang === 'kz' ? 'Қолтаңба' : 'Подпись'}
+          </h2>
+          <p className="text-sm text-gray-500">
+            {lang === 'kz'
+              ? 'Құжаттарда пайдаланылатын қолтаңбаңыз'
+              : 'Ваша подпись для документов'}
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+      ) : editing ? (
+        <SignaturePad
+          lang={lang}
+          initialSignature={currentSignature}
+          onSave={handleSave}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <div className="space-y-3">
+          {currentSignature ? (
+            <div className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+              <img src={currentSignature} alt="signature" className="h-16 object-contain" />
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
+              {lang === 'kz' ? 'Қолтаңба орнатылмаған' : 'Подпись не установлена'}
+            </div>
+          )}
+          {saved && (
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <Check size={16} />
+              {lang === 'kz' ? 'Сақталды' : 'Сохранено'}
+            </div>
+          )}
+          <button onClick={() => setEditing(true)}
+            className="btn-secondary text-sm flex items-center gap-1.5">
+            <PenTool size={14} />
+            {currentSignature
+              ? (lang === 'kz' ? 'Қолтаңбаны өзгерту' : 'Изменить подпись')
+              : (lang === 'kz' ? 'Қолтаңба қою' : 'Добавить подпись')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

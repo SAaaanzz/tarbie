@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { signJwt } from '../lib/jwt.js';
 import { loginSchema, verifyOtpSchema, generateId, ERROR_CODES, structuredLog } from '@tarbie/shared';
-import { rateLimit } from '../middleware/rate-limit.js';
+import { rateLimit, isOverLimit } from '../middleware/rate-limit.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const auth = new Hono<HonoEnv>();
@@ -13,7 +13,7 @@ async function createAuthSession(
   env: { JWT_SECRET: string; KV: KVNamespace }
 ) {
   const token = await signJwt(
-    { sub: user.id, role: user.role as 'admin' | 'teacher' | 'student' | 'parent', school_id: user.school_id },
+    { sub: user.id, role: user.role as 'admin' | 'teacher' | 'student', school_id: user.school_id },
     env.JWT_SECRET,
     86400
   );
@@ -47,6 +47,11 @@ auth.post('/login', rateLimit(20, 300), async (c) => {
 
   const { phone } = parsed.data;
 
+  // Phone-scoped throttle: at most 5 OTPs per phone per 5 min, regardless of IP.
+  if (await isOverLimit(c.env.KV, 'login_phone', phone, 5, 300)) {
+    return c.json({ success: false, code: ERROR_CODES.RATE_LIMITED, message: 'Слишком много попыток. Подождите 5 минут.' }, 429);
+  }
+
   const user = await c.env.DB.prepare('SELECT id, telegram_chat_id FROM users WHERE phone = ?')
     .bind(phone).first<{ id: string; telegram_chat_id: string | null }>();
   if (!user) {
@@ -61,7 +66,9 @@ auth.post('/login', rateLimit(20, 300), async (c) => {
     }, 400);
   }
 
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otpBuf = new Uint32Array(1);
+  crypto.getRandomValues(otpBuf);
+  const otp = String(100000 + (otpBuf[0]! % 900000));
   await c.env.KV.put(`otp:${phone}`, otp, { expirationTtl: 300 });
 
   try {
@@ -101,6 +108,11 @@ auth.post('/verify', rateLimit(10, 900), async (c) => {
   }
 
   const { phone, otp } = parsed.data;
+
+  // Phone-scoped throttle prevents an attacker from brute-forcing OTPs by rotating IPs.
+  if (await isOverLimit(c.env.KV, 'verify_phone', phone, 10, 900)) {
+    return c.json({ success: false, code: ERROR_CODES.RATE_LIMITED, message: 'Слишком много попыток ввода кода. Подождите 15 минут.' }, 429);
+  }
 
   // Verify via KV stored OTP
   const storedOtp = await c.env.KV.get(`otp:${phone}`);
@@ -190,7 +202,7 @@ auth.put('/me', authMiddleware, async (c) => {
   return c.json({ success: true, data: { updated: true } });
 });
 
-// Avatar upload (base64 via KV, max ~200KB)
+// Avatar upload — stored in R2 (KV cannot hold 30 GB of images at scale).
 auth.post('/me/avatar', authMiddleware, async (c) => {
   const authUser = c.get('user');
   const body = await c.req.json() as { avatar: string };
@@ -199,44 +211,62 @@ auth.post('/me/avatar', authMiddleware, async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'avatar (base64 data URL) required' }, 400);
   }
 
-  // Validate it's a data URL image
   if (!body.avatar.startsWith('data:image/')) {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid image format' }, 400);
   }
 
-  // Size check (~200KB base64)
+  // ~200 KB base64 (raw ~150 KB).
   if (body.avatar.length > 300000) {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Image too large (max 200KB)' }, 400);
   }
 
-  const avatarKey = `avatar:${authUser.id}`;
-  await c.env.KV.put(avatarKey, body.avatar);
+  // Decode data URL into raw bytes for R2 (cheaper to serve, easier to cache).
+  const match = body.avatar.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!match) {
+    return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Malformed data URL' }, 400);
+  }
+  const contentType = match[1]!;
+  const bytes = Uint8Array.from(atob(match[2]!), ch => ch.charCodeAt(0));
 
-  // Store a reference URL in DB
+  await c.env.AVATARS.put(authUser.id, bytes, {
+    httpMetadata: { contentType, cacheControl: 'public, max-age=86400' },
+  });
+
+  // Clean up any stale KV-based avatar from the legacy code path.
+  try { await c.env.KV.delete(`avatar:${authUser.id}`); } catch { /* ignore */ }
+
   const avatarUrl = `/api/auth/avatar/${authUser.id}`;
   await c.env.DB.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(avatarUrl, authUser.id).run();
 
   return c.json({ success: true, data: { avatar_url: avatarUrl } });
 });
 
-// Serve avatar image
+// Serve avatar image. Reads from R2 first, falls back to legacy KV for users who
+// uploaded their avatar before the R2 migration.
 auth.get('/avatar/:userId', async (c) => {
   const userId = c.req.param('userId');
+
+  const object = await c.env.AVATARS.get(userId);
+  if (object) {
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('Cache-Control', 'public, max-age=86400');
+    if (!headers.get('Content-Type')) headers.set('Content-Type', 'image/jpeg');
+    return new Response(object.body, { headers });
+  }
+
+  // Legacy fallback — old avatars stored as data URLs in KV.
   const data = await c.env.KV.get(`avatar:${userId}`);
   if (!data) {
     return c.json({ success: false, message: 'No avatar' }, 404);
   }
-
-  // Parse data URL: data:image/png;base64,xxxx
   const match = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
   if (!match) {
     return c.json({ success: false, message: 'Invalid avatar data' }, 500);
   }
-
   const contentType = match[1]!;
   const base64 = match[2]!;
   const bytes = Uint8Array.from(atob(base64), ch => ch.charCodeAt(0));
-
   return new Response(bytes, {
     headers: {
       'Content-Type': contentType,

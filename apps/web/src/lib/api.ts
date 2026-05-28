@@ -146,6 +146,40 @@ class ApiClient {
   async delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path);
   }
+
+  async postFormData<T>(path: string, formData: FormData): Promise<T> {
+    const url = `${API_BASE}${path}`;
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    const text = await res.text();
+    if (!text || text.trim() === '') {
+      throw new ApiRequestError('EMPTY_RESPONSE', 'Server returned empty response', res.status);
+    }
+
+    let json;
+    try { json = JSON.parse(text); } catch {
+      throw new ApiRequestError('INVALID_JSON', `Failed to parse JSON: ${text.slice(0, 100)}`, res.status);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
+      const error = json as ApiError;
+      throw new ApiRequestError(error.code ?? 'UNKNOWN', error.message ?? 'Request failed', res.status);
+    }
+
+    return (json as ApiResponse<T>).data;
+  }
 }
 
 export class ApiRequestError extends Error {

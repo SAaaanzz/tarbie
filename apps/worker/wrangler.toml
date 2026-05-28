@@ -12,6 +12,14 @@ database_id = "87e867fe-6797-431f-adc3-59593cee80af"
 binding = "KV"
 id = "4302997f858144d481fade050ff55e8b"
 
+# Avatars are stored in R2 (KV is unsuited for blobs and would blow the 1 GB cap
+# at ~5000 users with 200 KB avatars). Bucket must be created once:
+#   wrangler r2 bucket create tarbie-avatars
+# Enable R2 in Cloudflare Dashboard first, then uncomment:
+# [[r2_buckets]]
+# binding = "AVATARS"
+# bucket_name = "tarbie-avatars"
+
 [[queues.producers]]
 binding = "NOTIFICATION_QUEUE"
 queue = "tarbie-notifications"

@@ -6,7 +6,7 @@ import {
   LayoutDashboard, CalendarDays, BarChart3, Users,
   Settings, LogOut, GraduationCap, Star,
   Sparkles, UserCircle, CalendarHeart,
-  MessageCircle, BookOpen, Library, Moon, Sun,
+  MessageCircle, BookOpen, Library, Moon, Sun, FileCheck,
 } from 'lucide-react';
 import { Avatar } from './Avatar';
 
@@ -23,23 +23,24 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Панель управления', labelKz: 'Басқару тақтасы', icon: <LayoutDashboard size={20} />, href: '/', roles: ['admin', 'teacher', 'student', 'parent'] },
+  { label: 'Панель управления', labelKz: 'Басқару тақтасы', icon: <LayoutDashboard size={20} />, href: '/', roles: ['admin', 'teacher', 'student'] },
   { label: 'Тәрбие сағаттары', labelKz: 'Тәрбие сағаттары', icon: <CalendarDays size={20} />, href: '/sessions', roles: ['admin', 'teacher', 'student'] },
   { label: 'Оценки', labelKz: 'Бағалар', icon: <Star size={20} />, href: '/grades', roles: ['admin', 'teacher', 'student'] },
   { label: 'Мероприятия', labelKz: 'Іс-шаралар', icon: <CalendarHeart size={20} />, href: '/events', roles: ['admin', 'teacher', 'student'] },
   { label: 'Открытые занятия', labelKz: 'Ашық сабақтар', icon: <Sparkles size={20} />, href: '/open-sessions', roles: ['admin', 'teacher', 'student'] },
+  { label: 'Утверждение уроков', labelKz: 'Сабақ бекіту', icon: <FileCheck size={20} />, href: '/lesson-approvals', roles: ['admin', 'teacher'] },
   { label: 'Каталог курсов', labelKz: 'Курстар каталогы', icon: <BookOpen size={20} />, href: '/courses', roles: ['admin', 'teacher', 'student'] },
   { label: 'Мои курсы', labelKz: 'Менің курстарым', icon: <Library size={20} />, href: '/my-courses', roles: ['student'] },
   { label: 'Отчёты', labelKz: 'Есептер', icon: <BarChart3 size={20} />, href: '/reports', roles: ['admin', 'teacher'] },
   { label: 'Пользователи', labelKz: 'Пайдаланушылар', icon: <Users size={20} />, href: '/admin/users', roles: ['admin', 'teacher'] },
   { label: 'Группы', labelKz: 'Топтар', icon: <GraduationCap size={20} />, href: '/admin/classes', roles: ['admin', 'teacher'] },
-  { label: 'Поддержка', labelKz: 'Қолдау', icon: <MessageCircle size={20} />, href: '/support', roles: ['admin', 'teacher', 'student', 'parent'] },
+  { label: 'Поддержка', labelKz: 'Қолдау', icon: <MessageCircle size={20} />, href: '/support', roles: ['admin', 'teacher', 'student'] },
   { label: 'AI-ассистент', labelKz: 'AI-көмекші', icon: <Sparkles size={20} />, href: '/assistant', roles: ['admin', 'teacher'] },
-  { label: 'Рейтинг учителей', labelKz: 'Мұғалімдер рейтингі', icon: <Star size={20} />, href: '/ratings', roles: ['admin'] },
+  { label: 'Рейтинг кураторов', labelKz: 'Кураторлар рейтингі', icon: <Star size={20} />, href: '/ratings', roles: ['admin'] },
   { label: 'Отзывы', labelKz: 'Бағалау', icon: <Star size={20} />, href: '/reviews', roles: ['student'] },
   { label: 'Тесты', labelKz: 'Тесттер', icon: <Settings size={20} />, href: '/test-runner', roles: ['admin'] },
-  { label: 'Профиль', labelKz: 'Профиль', icon: <UserCircle size={20} />, href: '/profile', roles: ['admin', 'teacher', 'student', 'parent'] },
-  { label: 'Настройки', labelKz: 'Баптаулар', icon: <Settings size={20} />, href: '/settings', roles: ['admin', 'teacher', 'student', 'parent'] },
+  { label: 'Профиль', labelKz: 'Профиль', icon: <UserCircle size={20} />, href: '/profile', roles: ['admin', 'teacher', 'student'] },
+  { label: 'Настройки', labelKz: 'Баптаулар', icon: <Settings size={20} />, href: '/settings', roles: ['admin', 'teacher', 'student'] },
 ];
 
 export function Layout({ children }: LayoutProps) {
@@ -120,9 +121,8 @@ export function Layout({ children }: LayoutProps) {
                   <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{user?.full_name}</p>
                   <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                     {user?.role === 'admin' ? (lang === 'kz' ? 'Әкімші' : 'Админ') :
-                     user?.role === 'teacher' ? (lang === 'kz' ? 'Мұғалім' : 'Учитель') :
-                     user?.role === 'student' ? (lang === 'kz' ? 'Оқушы' : 'Ученик') :
-                     lang === 'kz' ? 'Ата-ана' : 'Родитель'}
+                     user?.role === 'teacher' ? 'Куратор' :
+                     user?.role === 'student' ? 'Студент' : ''}
                   </p>
                 </div>
                 <button

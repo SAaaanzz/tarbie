@@ -213,7 +213,7 @@ function TeacherAdminView({ lang }: { lang: 'kz' | 'ru' }) {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">{lang === 'kz' ? 'Оқушы' : 'Ученик'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">{lang === 'kz' ? 'Студент' : 'Студент'}</th>
                       <th className="px-3 py-3 text-center text-xs font-semibold uppercase text-gray-500">{lang === 'kz' ? 'Сабақтар' : 'Уроков'}</th>
                       <th className="px-3 py-3 text-center text-xs font-semibold uppercase text-green-600">✓</th>
                       <th className="px-3 py-3 text-center text-xs font-semibold uppercase text-red-500">Н</th>
@@ -415,7 +415,7 @@ function SessionGradingForm({ lang, session, onBack }: {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    {lang === 'kz' ? 'Оқушы' : 'Ученик'}
+                    {lang === 'kz' ? 'Студент' : 'Студент'}
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">
                     {lang === 'kz' ? 'Қатысу' : 'Статус'}

@@ -131,8 +131,8 @@ export function OpenSessionsPage() {
 
       <p className="text-sm text-gray-500">
         {lang === 'kz'
-          ? 'Мұғалімдер ашық сабақтар жасайды — топ оқушылары қатыса алады'
-          : 'Учителя создают открытые занятия для группы — участники видят свои занятия'}
+          ? 'Кураторлар ашық сабақтар жасайды — топ студенттері қатыса алады'
+          : 'Кураторы создают открытые занятия для группы — студенты видят свои занятия'}
       </p>
 
       {loading ? (
@@ -156,7 +156,7 @@ export function OpenSessionsPage() {
               {s.description && <p className="text-xs text-gray-500 line-clamp-2 mb-2">{s.description}</p>}
               <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-3">
                 <Avatar name={s.teacher_name} size="xs" avatarUrl={(s as any).teacher_avatar_url} />
-                <span>{lang === 'kz' ? 'Мұғалім' : 'Учитель'}: </span>
+                <span>{lang === 'kz' ? 'Куратор' : 'Куратор'}: </span>
                 <span className="font-medium">{s.teacher_name}</span>
               </div>
               <div className="flex flex-wrap gap-3 text-xs text-gray-500">
@@ -190,7 +190,7 @@ export function OpenSessionsPage() {
                   <h3 className="text-lg font-bold text-gray-900">{detail.title}</h3>
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-0.5">
                     <Avatar name={detail.teacher_name} size="xs" avatarUrl={(detail as any).teacher_avatar_url} />
-                    <span>{lang === 'kz' ? 'Мұғалім' : 'Учитель'}: </span>
+                    <span>{lang === 'kz' ? 'Куратор' : 'Куратор'}: </span>
                     <span className="font-medium">{detail.teacher_name}</span>
                   </div>
                 </div>
@@ -381,7 +381,7 @@ function CreateOpenSessionModal({ lang, onClose, onCreated }: { lang: 'kz' | 'ru
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Макс. оқушы' : 'Макс. учеников'}</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{lang === 'kz' ? 'Макс. студент' : 'Макс. студентов'}</label>
             <input type="number" className="input-field w-32" value={maxStudents} min={1} onChange={e => setMaxStudents(Number(e.target.value))} />
           </div>
 

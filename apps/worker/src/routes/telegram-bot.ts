@@ -13,8 +13,14 @@ async function tg(token: string, method: string, body: Record<string, unknown>) 
 
 const bot = new Hono<{ Bindings: Env }>();
 
-// Webhook setup & diagnostics (no auth — uses bot token as secret)
+// Webhook setup & diagnostics — protected by TELEGRAM_WEBHOOK_SECRET
+function checkBotAdminSecret(c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined }; env: Env }): boolean {
+  const provided = c.req.header('X-Admin-Secret') ?? c.req.query('secret') ?? '';
+  return provided !== '' && provided === c.env.TELEGRAM_WEBHOOK_SECRET;
+}
+
 bot.get('/setup', async (c) => {
+  if (!checkBotAdminSecret(c)) return c.json({ success: false, message: 'Unauthorized' }, 401);
   const token = c.env.TELEGRAM_BOT_TOKEN;
   const webhookUrl = 'https://dprabota.bahtyarsanzhar.workers.dev/api/telegram/webhook';
   const setRes = await tg(token, 'setWebhook', {
@@ -27,6 +33,7 @@ bot.get('/setup', async (c) => {
 });
 
 bot.get('/info', async (c) => {
+  if (!checkBotAdminSecret(c)) return c.json({ success: false, message: 'Unauthorized' }, 401);
   const token = c.env.TELEGRAM_BOT_TOKEN;
   const infoRes = await tg(token, 'getWebhookInfo', {});
   const adminChatId = await c.env.KV.get('support_admin_chat_id');

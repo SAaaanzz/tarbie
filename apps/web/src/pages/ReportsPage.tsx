@@ -154,7 +154,7 @@ export function ReportsPage() {
               color="text-blue-600"
             />
             <MetricCard
-              label={lang === 'kz' ? 'Оқушылар' : 'Учеников'}
+              label={lang === 'kz' ? 'Студенттер' : 'Студентов'}
               value={report.total_students}
               color="text-purple-600"
             />

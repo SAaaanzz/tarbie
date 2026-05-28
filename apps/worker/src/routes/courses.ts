@@ -30,7 +30,7 @@ courses.get('/', async (c) => {
   const conditions: string[] = ['co.school_id = ?'];
   const params: (string | number)[] = [user.school_id];
 
-  if (user.role === 'student' || user.role === 'parent') {
+  if (user.role === 'student') {
     conditions.push("co.status = 'published'");
   } else if (status) {
     conditions.push('co.status = ?');
@@ -109,7 +109,7 @@ courses.get('/:id', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'Course not found' }, 404);
   }
 
-  if ((user.role === 'student' || user.role === 'parent') && course.status !== 'published') {
+  if (user.role === 'student' && course.status !== 'published') {
     return c.json({ success: false, code: ERROR_CODES.NOT_FOUND, message: 'Course not found' }, 404);
   }
 

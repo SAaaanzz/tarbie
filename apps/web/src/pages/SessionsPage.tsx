@@ -92,7 +92,7 @@ export function SessionsPage() {
 
     const header = [
       lang === 'kz' ? 'Топ' : 'Группа',
-      lang === 'kz' ? 'Куратор' : 'Куратор/Учитель',
+      lang === 'kz' ? 'Куратор' : 'Куратор',
       lang === 'kz' ? 'Тақырып' : 'Тема',
       lang === 'kz' ? 'Күні' : 'Дата',
       lang === 'kz' ? 'Уақыт' : 'Время',
@@ -1330,6 +1330,7 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
   const [duration, setDuration] = useState(30);
   const [timeSlot, setTimeSlot] = useState('');
   const [room, setRoom] = useState('');
+  const [wordFile, setWordFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<Array<{ id: string; name: string }>>([]);
@@ -1401,7 +1402,7 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
     setSubmitting(true);
     setError('');
     try {
-      await api.post('/api/sessions', {
+      const res = await api.post<{ id: string }>('/api/sessions', {
         class_id: classId,
         topic,
         planned_date: date,
@@ -1409,6 +1410,15 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
         room,
         duration_minutes: duration,
       });
+      // If Word file provided, submit for approval
+      if (wordFile && res?.id) {
+        const formData = new FormData();
+        formData.append('session_id', res.id);
+        formData.append('file', wordFile);
+        try {
+          await api.postFormData('/api/lesson-approvals', formData);
+        } catch { /* session created, approval upload failed silently */ }
+      }
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'kz' ? 'Қате' : 'Ошибка'));
@@ -1602,6 +1612,26 @@ function CreateSessionModal({ onClose, onCreated, lang }: {
               )}
             </div>
           )}
+
+          {/* Word file upload for approval */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              <Upload size={14} className="inline mr-1" />
+              {lang === 'kz' ? 'Word файл (бекіту үшін)' : 'Word файл (для утверждения)'}
+            </label>
+            <input
+              type="file"
+              accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              onChange={(e) => setWordFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-700 hover:file:bg-primary-100"
+            />
+            {wordFile && (
+              <p className="mt-1 text-xs text-gray-500">✓ {wordFile.name}</p>
+            )}
+            <p className="mt-1 text-xs text-gray-400">
+              {lang === 'kz' ? 'Администратор тексеріп, бекітеді' : 'Администратор проверит и утвердит'}
+            </p>
+          </div>
 
           {/* Selected summary */}
           {timeSlot && room && (

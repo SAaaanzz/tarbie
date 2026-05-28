@@ -16,7 +16,7 @@ teacher.get('/users', async (c) => {
   return c.json({ success: true, data: rows.results });
 });
 
-// ── Create user (student or parent only) ──
+// ── Create user (student only) ──
 teacher.post('/users', async (c) => {
   const user = c.get('user');
   const body = await c.req.json();
@@ -25,9 +25,9 @@ teacher.post('/users', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: parsed.error.issues[0]?.message ?? 'Invalid input' }, 400);
   }
 
-  // Teachers can only create students and parents
-  if (!['student', 'parent'].includes(parsed.data.role)) {
-    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Teachers can only create students and parents' }, 403);
+  // Teachers can only create students
+  if (parsed.data.role !== 'student') {
+    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Teachers can only create students' }, 403);
   }
 
   const existing = await c.env.DB.prepare(
@@ -53,7 +53,7 @@ teacher.post('/users', async (c) => {
   return c.json({ success: true, data: { id, ...parsed.data } }, 201);
 });
 
-// ── Bulk create users (student/parent only) ──
+// ── Bulk create users (student only) ──
 teacher.post('/users/bulk', async (c) => {
   const user = c.get('user');
   const body = await c.req.json() as { users: Array<{ full_name: string; phone: string; role: string; lang: string }> };
@@ -78,8 +78,8 @@ teacher.post('/users/bulk', async (c) => {
 
   for (let i = 0; i < body.users.length; i++) {
     const u = body.users[i]!;
-    // Force role to student/parent only
-    if (u.role && !['student', 'parent'].includes(u.role)) {
+    // Force role to student only
+    if (u.role && u.role !== 'student') {
       u.role = 'student';
     }
     const parsed = createUserSchema.safeParse(u);
@@ -124,7 +124,7 @@ teacher.post('/users/bulk', async (c) => {
   return c.json({ success: true, data: { results, summary: { total: body.users.length, created, duplicates, errors } } }, 201);
 });
 
-// ── Edit user (only own created, student/parent role only) ──
+// ── Edit user (only own created, student role only) ──
 teacher.put('/users/:id', async (c) => {
   const authUser = c.get('user');
   const userId = c.req.param('id');
@@ -137,11 +137,22 @@ teacher.put('/users/:id', async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'User not found or not created by you' }, 404);
   }
 
-  if (body.role && !['student', 'parent'].includes(body.role)) {
-    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Teachers can only assign student or parent roles' }, 403);
+  if (body.role && body.role !== 'student') {
+    return c.json({ success: false, code: ERROR_CODES.FORBIDDEN, message: 'Teachers can only assign student role' }, 403);
   }
   if (body.lang && !['kz', 'ru'].includes(body.lang)) {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'lang must be kz or ru' }, 400);
+  }
+
+  // Phone has a UNIQUE constraint. Pre-check so the caller gets a proper 409
+  // instead of a generic 500 when the DB rejects the insert.
+  if (body.phone) {
+    const clash = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE phone = ? AND id != ?'
+    ).bind(body.phone, userId).first();
+    if (clash) {
+      return c.json({ success: false, code: ERROR_CODES.DUPLICATE_ENTRY, message: 'Phone already in use' }, 409);
+    }
   }
 
   const updates: string[] = [];

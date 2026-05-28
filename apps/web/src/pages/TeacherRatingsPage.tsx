@@ -71,7 +71,7 @@ export function TeacherRatingsPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
         <Star size={24} className="text-amber-500" />
-        {k ? 'Мұғалімдер рейтингі' : 'Рейтинг учителей'}
+        {k ? 'Кураторлар рейтингі' : 'Рейтинг кураторов'}
       </h1>
 
       {teachers.length === 0 ? (

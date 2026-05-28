@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { bulkAttendanceSchema, generateId, nowISO, ERROR_CODES, structuredLog } from '@tarbie/shared';
-import type { QueueMessage } from '@tarbie/shared';
+
 
 const attendance = new Hono<HonoEnv>();
 
@@ -54,31 +54,7 @@ attendance.post('/:id/attendance', requireRole('admin', 'teacher'), async (c) =>
       ).bind(studentId, session.class_id).first<{ cnt: number }>();
 
       if (absenceCount && absenceCount.cnt >= 3) {
-        const parents = await c.env.DB.prepare(
-          `SELECT p.id FROM users p
-           WHERE p.role = 'parent' AND p.school_id = ?
-           AND p.phone IN (
-             SELECT phone FROM users WHERE id = ?
-           )`
-        ).bind(user.school_id, studentId).all<{ id: string }>();
-
-        const student = await c.env.DB.prepare(
-          'SELECT full_name FROM users WHERE id = ?'
-        ).bind(studentId).first<{ full_name: string }>();
-
-        if (parents.results.length > 0 && student) {
-          const queueMsg: QueueMessage = {
-            event_type: 'ABSENCE_ALERT',
-            session_id: sessionId,
-            user_ids: parents.results.map(p => p.id),
-            template_vars: {
-              student_name: student.full_name,
-              class_name: session.class_name,
-            },
-            attempt: 0,
-          };
-          await c.env.NOTIFICATION_QUEUE.send(queueMsg);
-        }
+        structuredLog('warn', 'Student has 3+ absences', { student_id: studentId, class_id: session.class_id });
       }
     }
   }
@@ -88,7 +64,7 @@ attendance.post('/:id/attendance', requireRole('admin', 'teacher'), async (c) =>
   return c.json({ success: true, data: { session_id: sessionId, recorded: parsed.data.attendance.length } });
 });
 
-attendance.get('/:id/attendance', async (c) => {
+attendance.get('/:id/attendance', requireRole('admin', 'teacher'), async (c) => {
   const user = c.get('user');
   const sessionId = c.req.param('id');
 

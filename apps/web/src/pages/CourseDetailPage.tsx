@@ -203,7 +203,7 @@ export function CourseDetailPage({ courseId }: { courseId: string }) {
                   </div>
                   <div>
                     <p className="text-lg font-bold text-gray-900">{course.enrolled_count}</p>
-                    <p className="text-xs text-gray-500">{t(lang, 'Оқушылар', 'Учеников')}</p>
+                    <p className="text-xs text-gray-500">{t(lang, 'Студенттер', 'Студентов')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold text-gray-900">

@@ -36,9 +36,8 @@ export function ProfilePage() {
   const roleLabel = (role: string) => {
     const map: Record<string, Record<string, string>> = {
       admin: { kz: 'Әкімші', ru: 'Администратор' },
-      teacher: { kz: 'Мұғалім', ru: 'Учитель' },
-      student: { kz: 'Оқушы', ru: 'Ученик' },
-      parent: { kz: 'Ата-ана', ru: 'Родитель' },
+      teacher: { kz: 'Куратор', ru: 'Куратор' },
+      student: { kz: 'Студент', ru: 'Студент' },
     };
     return map[role]?.[lang] ?? role;
   };

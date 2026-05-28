@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'teacher' | 'student' | 'parent';
+export type Role = 'admin' | 'teacher' | 'student';
 export type Lang = 'kz' | 'ru';
 export type SessionStatus = 'planned' | 'completed' | 'cancelled' | 'rescheduled';
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';

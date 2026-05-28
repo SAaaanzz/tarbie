@@ -299,17 +299,17 @@ grades.get('/classes/:classId/sessions', async (c) => {
   return c.json({ success: true, data: rows.results });
 });
 
-// ── Get all grades for a student (student/parent view) ──
+// ── Get all grades for a student (student view) ──
 grades.get('/students/:studentId/grades', async (c) => {
   const user = c.get('user');
   const studentId = c.req.param('studentId');
 
-  // Students can only see own grades
+  // Students can only see own grades.
   if (user.role === 'student' && user.id !== studentId) {
     return c.json({ success: false, code: 'FORBIDDEN', message: 'Access denied' }, 403);
   }
 
-  // Verify student belongs to same school
+  // Verify student belongs to same school (teacher / admin path).
   if (user.role !== 'student') {
     const student = await c.env.DB.prepare(
       'SELECT id FROM users WHERE id = ? AND school_id = ?'
@@ -344,7 +344,7 @@ grades.get('/students/:studentId/monthly', async (c) => {
     return c.json({ success: false, code: 'FORBIDDEN', message: 'Access denied' }, 403);
   }
 
-  // Verify student belongs to same school
+  // Verify student belongs to same school (teacher / admin path).
   if (user.role !== 'student') {
     const student = await c.env.DB.prepare(
       'SELECT id FROM users WHERE id = ? AND school_id = ?'

@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   KV: KVNamespace;
+  AVATARS: R2Bucket;
   NOTIFICATION_QUEUE: Queue;
   JWT_SECRET: string;
   TELEGRAM_BOT_TOKEN: string;
@@ -15,7 +16,7 @@ export interface Env {
 
 export interface AuthUser {
   id: string;
-  role: 'admin' | 'teacher' | 'student' | 'parent';
+  role: 'admin' | 'teacher' | 'student';
   school_id: string;
 }
 

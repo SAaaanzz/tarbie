@@ -40,13 +40,25 @@ ratings.post('/session/:sessionId', authMiddleware, async (c) => {
     return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'Rating must be 1-10' }, 400);
   }
 
-  // Get session to find teacher
+  // Get session + verify student was actually enrolled in the session's class.
+  // Without this any student in any school could vote on any session and tank
+  // a stranger's rating.
   const session = await c.env.DB.prepare(
-    'SELECT teacher_id FROM tarbie_sessions WHERE id = ?'
-  ).bind(sessionId).first<{ teacher_id: string }>();
+    `SELECT ts.teacher_id, ts.class_id, c.school_id
+     FROM tarbie_sessions ts
+     JOIN classes c ON ts.class_id = c.id
+     WHERE ts.id = ?`
+  ).bind(sessionId).first<{ teacher_id: string; class_id: string; school_id: string }>();
 
-  if (!session) {
+  if (!session || session.school_id !== authUser.school_id) {
     return c.json({ success: false, code: 'NOT_FOUND', message: 'Session not found' }, 404);
+  }
+
+  const enrolled = await c.env.DB.prepare(
+    'SELECT 1 as ok FROM class_students WHERE class_id = ? AND student_id = ? LIMIT 1'
+  ).bind(session.class_id, authUser.id).first<{ ok: number }>();
+  if (!enrolled) {
+    return c.json({ success: false, code: 'FORBIDDEN', message: 'You were not enrolled in this session\'s class' }, 403);
   }
 
   // Check duplicate
@@ -162,9 +174,25 @@ ratings.get('/teachers', authMiddleware, async (c) => {
   });
 });
 
-// ── Get all reviews for a session (teacher/admin) ──
+// ── Get all reviews for a session (teacher who taught it, or admin) ──
 ratings.get('/session/:sessionId', authMiddleware, async (c) => {
+  const authUser = c.get('user');
   const sessionId = c.req.param('sessionId');
+
+  // Locate the session and confirm the caller is allowed to inspect its reviews.
+  const session = await c.env.DB.prepare(
+    `SELECT ts.teacher_id, c.school_id
+     FROM tarbie_sessions ts
+     JOIN classes c ON ts.class_id = c.id
+     WHERE ts.id = ?`
+  ).bind(sessionId).first<{ teacher_id: string; school_id: string }>();
+  if (!session || session.school_id !== authUser.school_id) {
+    return c.json({ success: false, code: 'NOT_FOUND', message: 'Session not found' }, 404);
+  }
+  const isOwnTeacher = authUser.role === 'teacher' && session.teacher_id === authUser.id;
+  if (authUser.role !== 'admin' && !isOwnTeacher) {
+    return c.json({ success: false, code: 'FORBIDDEN', message: 'Access denied' }, 403);
+  }
 
   const results = await c.env.DB.prepare(
     `SELECT sr.id, sr.rating, sr.reason, sr.is_valid, sr.filter_reason, sr.is_anonymous, sr.created_at,
@@ -178,8 +206,13 @@ ratings.get('/session/:sessionId', authMiddleware, async (c) => {
   return c.json({
     success: true,
     data: results.results.map(r => ({
-      ...r,
+      id: r.id,
+      rating: r.rating,
+      reason: r.reason,
+      created_at: r.created_at,
       is_anonymous: !!r.is_anonymous,
+      // Internal fields (is_valid, filter_reason) are only revealed to admins.
+      ...(authUser.role === 'admin' ? { is_valid: !!r.is_valid, filter_reason: r.filter_reason } : {}),
       student_name: r.is_anonymous ? 'Аноним' : r.student_name,
     })),
   });
