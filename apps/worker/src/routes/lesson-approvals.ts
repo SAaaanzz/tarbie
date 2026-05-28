@@ -267,6 +267,7 @@ lessonApprovals.get('/:id/document', async (c) => {
   // Get signatures (only if approved; for pending - return nulls)
   let curatorSignature: string | null = null;
   let adminSignature: string | null = null;
+  let adminSignature2: string | null = null;
 
   if (approval.curator_id) {
     const cs = await c.env.DB.prepare(
@@ -277,9 +278,10 @@ lessonApprovals.get('/:id/document', async (c) => {
 
   if (approval.status === 'approved' && approval.approved_by) {
     const as2 = await c.env.DB.prepare(
-      'SELECT signature_data FROM user_signatures WHERE user_id = ?'
-    ).bind(approval.approved_by).first<{ signature_data: string }>();
+      'SELECT signature_data, signature_data_2 FROM user_signatures WHERE user_id = ?'
+    ).bind(approval.approved_by).first<{ signature_data: string; signature_data_2: string | null }>();
     adminSignature = as2?.signature_data || null;
+    adminSignature2 = as2?.signature_data_2 || null;
   }
 
   return c.json({
@@ -293,6 +295,7 @@ lessonApprovals.get('/:id/document', async (c) => {
       approved_at: approval.approved_at,
       curator_signature: curatorSignature,
       admin_signature: adminSignature,
+      admin_signature_2: adminSignature2,
       status: approval.status,
     },
   });

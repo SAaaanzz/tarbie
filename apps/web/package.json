@@ -19,6 +19,7 @@
     "@tanstack/react-router": "^1.45.0",
     "@tarbie/shared": "workspace:*",
     "date-fns": "^3.6.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.400.0",
     "mammoth": "^1.12.0",
     "react": "^18.3.1",

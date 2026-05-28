@@ -5,7 +5,7 @@ import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
   Download,
 } from 'lucide-react';
-import mammoth from 'mammoth';
+import JSZip from 'jszip';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';
 
@@ -40,6 +40,7 @@ interface DocumentData {
   approved_at: string;
   curator_signature: string | null;
   admin_signature: string | null;
+  admin_signature_2: string | null;
   status: string;
 }
 
@@ -52,7 +53,7 @@ export function LessonApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
   const [submitting, setSubmitting] = useState<string | null>(null);
-  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const loadApprovals = () => {
     setLoading(true);
@@ -90,8 +91,8 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const handleDownloadPdf = async (id: string) => {
-    setDownloadingPdf(id);
+  const handleDownloadWord = async (id: string, fileName: string) => {
+    setDownloading(id);
     try {
       const token = getToken();
 
@@ -109,36 +110,21 @@ export function LessonApprovalsPage() {
       }
       const arrayBuffer = await fileRes.arrayBuffer();
 
-      // 3. Convert Word to HTML
-      const result = await mammoth.convertToHtml(
-        { arrayBuffer },
-        {
-          convertImage: mammoth.images.imgElement((image) =>
-            image.read('base64').then((buf) => ({
-              src: `data:${image.contentType};base64,${buf}`,
-            }))
-          ),
-        }
-      );
+      // 3. Modify the .docx — inject signatures directly into Word XML
+      const signedDocx = await injectSignaturesIntoDocx(arrayBuffer, doc);
 
-      // 4. Inject signatures into the HTML
-      let html = result.value;
-      html = injectSignatures(html, doc);
-
-      // 5. Open in new window for Print → Save as PDF
-      const pdfHtml = buildPdfPage(doc.topic, html);
-      const w = window.open('', '_blank');
-      if (!w) {
-        alert('Разрешите всплывающие окна для сохранения PDF');
-        return;
-      }
-      w.document.write(pdfHtml);
-      w.document.close();
-      setTimeout(() => w.print(), 600);
+      // 4. Trigger download
+      const blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName.replace(/\.docx?$/i, '') + '_signed.docx';
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка');
     } finally {
-      setDownloadingPdf(null);
+      setDownloading(null);
     }
   };
 
@@ -216,14 +202,14 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download PDF with signatures */}
+                  {/* Download signed Word file */}
                   {a.status === 'approved' && (
                     <button
                       className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями'}
-                      disabled={downloadingPdf === a.id}
-                      onClick={() => handleDownloadPdf(a.id)}>
-                      {downloadingPdf === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                      title={lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями'}
+                      disabled={downloading === a.id}
+                      onClick={() => handleDownloadWord(a.id, a.word_file_name)}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                     </button>
                   )}
                   {/* Admin approve/reject */}
@@ -251,48 +237,133 @@ export function LessonApprovalsPage() {
   );
 }
 
-// ── Helpers ──
+// ── Inject signatures directly into .docx XML ──
 
-function injectSignatures(html: string, doc: DocumentData): string {
-  const sigImg = (src: string | null) =>
-    src ? `<img src="${src}" style="height:48px;object-fit:contain;display:inline-block;vertical-align:bottom;margin:0 4px"/>` : '';
+function dataUriToBytes(dataUri: string): Uint8Array {
+  const base64 = dataUri.split(',')[1] ?? '';
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  return bytes;
+}
 
-  // Replace underscore lines before "А.Абдраймова" with admin signature
-  html = html.replace(
-    /_{3,}\s*А\.?\s*Абдраймова/g,
-    `${sigImg(doc.admin_signature)} А.Абдраймова`
-  );
+function makeInlineImageXml(rId: string, cx: number, cy: number): string {
+  return `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
+    `<wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:docPr id="${Math.floor(Math.random() * 99999)}" name="sig"/>` +
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+    `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:nvPicPr><pic:cNvPr id="0" name="sig.png"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${rId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>` +
+    `<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+}
 
-  // Replace underscore lines after "Топ жетекшісі:" with curator signature
-  html = html.replace(
-    /(Топ жетекшісі:\s*)_{3,}/g,
-    `$1${sigImg(doc.curator_signature)}`
-  );
+async function injectSignaturesIntoDocx(
+  docxBuffer: ArrayBuffer,
+  doc: DocumentData
+): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(docxBuffer);
 
-  // Replace date underscores near year
-  if (doc.approved_at) {
-    const d = new Date(doc.approved_at);
-    const dateStr = d.toLocaleDateString('ru-RU');
-    html = html.replace(
-      /_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `${dateStr}$1`
+  let xml = await zip.file('word/document.xml')!.async('string');
+  let relsXml = await zip.file('word/_rels/document.xml.rels')!.async('string');
+
+  const sigImages: { id: string; path: string; data: Uint8Array }[] = [];
+  let imgCounter = 100;
+
+  const addSigImage = (dataUri: string | null): string | null => {
+    if (!dataUri) return null;
+    const rId = `rIdSig${imgCounter}`;
+    const imgPath = `media/sig${imgCounter}.png`;
+    sigImages.push({ id: rId, path: imgPath, data: dataUriToBytes(dataUri) });
+    imgCounter++;
+    return rId;
+  };
+
+  const adminSigRId = addSigImage(doc.admin_signature);
+  const adminSig2RId = addSigImage(doc.admin_signature_2);
+  const curatorSigRId = addSigImage(doc.curator_signature);
+
+  // Signature size: ~2cm wide x 0.8cm tall in EMUs (1cm = 360000 EMUs)
+  const sigW = 720000;
+  const sigH = 288000;
+
+  // Replace underscore text runs with signature images in the XML
+  // Pattern: text nodes containing "____...А.Абдраймова" → admin signature 1
+  if (adminSigRId) {
+    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    xml = xml.replace(
+      /(<w:t[^>]*>)([^<]*_{3,}\s*)(А\.?\s*Абдраймова)(<\/w:t>)/g,
+      (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
+    );
+    // Also handle split across runs: underscores in one <w:t>, name in next
+    xml = xml.replace(
+      /(<w:t[^>]*>)([^<]*_{3,})(<\/w:t>)((?:<\/w:r><w:r>(?:<w:rPr[^>]*\/>|<w:rPr>.*?<\/w:rPr>)?)?<w:t[^>]*>)(\s*А\.?\s*Абдраймова)/gs,
+      (_, _o, _u, _c, middle, name) => `<w:t xml:space="preserve">${imgXml} </w:t>${middle}${name}`
     );
   }
 
-  return html;
-}
+  // Pattern: "____...Сонурова Мехирам Мухтаровна" → admin signature 2
+  if (adminSig2RId) {
+    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSig2RId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    xml = xml.replace(
+      /(<w:t[^>]*>)([^<]*_{3,}\s*)(Сонурова[^<]*)(<\/w:t>)/g,
+      (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
+    );
+    xml = xml.replace(
+      /(<w:t[^>]*>)([^<]*_{3,})(<\/w:t>)((?:<\/w:r><w:r>(?:<w:rPr[^>]*\/>|<w:rPr>.*?<\/w:rPr>)?)?<w:t[^>]*>)(\s*Сонурова)/gs,
+      (_, _o, _u, _c, middle, name) => `<w:t xml:space="preserve">${imgXml} </w:t>${middle}${name}`
+    );
+  }
 
-function buildPdfPage(title: string, bodyHtml: string): string {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${title}</title>
-<style>
-body { font-family: 'Times New Roman', serif; padding: 40px 60px; font-size: 14px; line-height: 1.6; color: #000; }
-table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-td, th { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
-p { margin: 4px 0; }
-img { max-width: 100%; }
-@media print { body { padding: 20px 40px; } }
-</style></head><body>
-${bodyHtml}
-</body></html>`;
+  // Pattern: "Топ жетекшісі: ____..." → curator signature
+  if (curatorSigRId) {
+    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(curatorSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    xml = xml.replace(
+      /(<w:t[^>]*>)([^<]*Топ жетекшісі:\s*)_{3,}([^<]*)(<\/w:t>)/g,
+      (_, open, prefix, suffix, close) => `${open}${prefix}${imgXml} ${suffix}${close}`
+    );
+  }
+
+  // Replace date underscores: "____  2026 ж." and "«_____»__________ 2026ж."
+  if (doc.approved_at) {
+    const d = new Date(doc.approved_at);
+    const day = String(d.getDate()).padStart(2, '0');
+    const months = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
+    const monthKz = months[d.getMonth()] ?? '';
+    const year = d.getFullYear();
+
+    // Pattern: "____  2026 ж."
+    xml = xml.replace(
+      /_{3,}(\s*20\d{2}\s*ж\.?)/g,
+      `«${day}» ${monthKz} $1`
+    );
+
+    // Pattern: "«_____»__________ 2026ж."
+    xml = xml.replace(
+      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
+      `«${day}» ${monthKz} ${year} ж.`
+    );
+  }
+
+  // Save modified XML
+  zip.file('word/document.xml', xml);
+
+  // Add image files to zip
+  for (const img of sigImages) {
+    zip.file(`word/${img.path}`, img.data);
+  }
+
+  // Add relationships for images
+  const closingTag = '</Relationships>';
+  const newRels = sigImages.map(img =>
+    `<Relationship Id="${img.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${img.path}"/>`
+  ).join('');
+  relsXml = relsXml.replace(closingTag, newRels + closingTag);
+  zip.file('word/_rels/document.xml.rels', relsXml);
+
+  return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
 }

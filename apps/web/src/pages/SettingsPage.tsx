@@ -165,7 +165,7 @@ export function SettingsPage() {
           </div>
         </dl>
       </div>
-      {(user?.role === 'admin' || user?.role === 'teacher') && <SignatureSettings lang={lang} />}
+      {(user?.role === 'admin' || user?.role === 'teacher') && <SignatureSettings lang={lang} role={user?.role ?? 'teacher'} />}
       {user?.role === 'admin' && <SupportAdminSettings lang={lang} />}
       {user?.role === 'admin' && <AdminChangeLog lang={lang} />}
     </div>
@@ -174,28 +174,74 @@ export function SettingsPage() {
 
 /* ─── Signature Settings ─── */
 
-function SignatureSettings({ lang }: { lang: 'kz' | 'ru' }) {
-  const [currentSignature, setCurrentSignature] = useState<string | null>(null);
+function SignatureSettings({ lang, role }: { lang: 'kz' | 'ru'; role: string }) {
+  const isAdmin = role === 'admin';
+  const [sig1, setSig1] = useState<string | null>(null);
+  const [sig2, setSig2] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<null | 1 | 2>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.get<{ signature_data: string } | null>('/api/signatures/me')
-      .then((res) => { setCurrentSignature(res?.signature_data || null); })
+    api.get<{ signature_data: string; signature_data_2: string | null } | null>('/api/signatures/me')
+      .then((res) => {
+        setSig1(res?.signature_data || null);
+        setSig2(res?.signature_data_2 || null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   const handleSave = async (signatureData: string) => {
     try {
-      await api.post('/api/signatures/me', { signature_data: signatureData });
-      setCurrentSignature(signatureData);
-      setEditing(false);
+      const payload: { signature_data: string; signature_data_2?: string } = editing === 2
+        ? { signature_data: sig1 ?? signatureData, signature_data_2: signatureData }
+        : { signature_data: signatureData, signature_data_2: sig2 ?? undefined };
+      await api.post('/api/signatures/me', payload);
+      if (editing === 2) setSig2(signatureData);
+      else setSig1(signatureData);
+      setEditing(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { /* ignore */ }
   };
+
+  const renderSigBlock = (
+    label: string,
+    sigData: string | null,
+    sigNum: 1 | 2,
+  ) => (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-gray-600">{label}</p>
+      {editing === sigNum ? (
+        <SignaturePad
+          lang={lang}
+          initialSignature={sigData}
+          onSave={handleSave}
+          onCancel={() => setEditing(null)}
+        />
+      ) : (
+        <>
+          {sigData ? (
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <img src={sigData} alt="signature" className="h-14 object-contain" />
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-400">
+              {lang === 'kz' ? 'Қолтаңба орнатылмаған' : 'Подпись не установлена'}
+            </div>
+          )}
+          <button onClick={() => setEditing(sigNum)}
+            className="btn-secondary text-xs flex items-center gap-1.5">
+            <PenTool size={12} />
+            {sigData
+              ? (lang === 'kz' ? 'Өзгерту' : 'Изменить')
+              : (lang === 'kz' ? 'Қолтаңба қою' : 'Добавить')}
+          </button>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="card">
@@ -217,23 +263,19 @@ function SignatureSettings({ lang }: { lang: 'kz' | 'ru' }) {
 
       {loading ? (
         <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
-      ) : editing ? (
-        <SignaturePad
-          lang={lang}
-          initialSignature={currentSignature}
-          onSave={handleSave}
-          onCancel={() => setEditing(false)}
-        />
       ) : (
-        <div className="space-y-3">
-          {currentSignature ? (
-            <div className="rounded-lg border border-gray-200 p-4 bg-gray-50">
-              <img src={currentSignature} alt="signature" className="h-16 object-contain" />
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
-              {lang === 'kz' ? 'Қолтаңба орнатылмаған' : 'Подпись не установлена'}
-            </div>
+        <div className="space-y-4">
+          {renderSigBlock(
+            isAdmin
+              ? (lang === 'kz' ? '1-ші қолтаңба (А.Абдраймова)' : 'Подпись 1 (А.Абдраймова)')
+              : (lang === 'kz' ? 'Қолтаңба' : 'Подпись'),
+            sig1,
+            1
+          )}
+          {isAdmin && renderSigBlock(
+            lang === 'kz' ? '2-ші қолтаңба (Сонурова М.М.)' : 'Подпись 2 (Сонурова М.М.)',
+            sig2,
+            2
           )}
           {saved && (
             <div className="flex items-center gap-2 text-sm text-green-600">
@@ -241,13 +283,6 @@ function SignatureSettings({ lang }: { lang: 'kz' | 'ru' }) {
               {lang === 'kz' ? 'Сақталды' : 'Сохранено'}
             </div>
           )}
-          <button onClick={() => setEditing(true)}
-            className="btn-secondary text-sm flex items-center gap-1.5">
-            <PenTool size={14} />
-            {currentSignature
-              ? (lang === 'kz' ? 'Қолтаңбаны өзгерту' : 'Изменить подпись')
-              : (lang === 'kz' ? 'Қолтаңба қою' : 'Добавить подпись')}
-          </button>
         </div>
       )}
     </div>
