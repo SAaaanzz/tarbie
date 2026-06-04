@@ -91,7 +91,7 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const handleDownloadWord = async (id: string, fileName: string) => {
+  const handleDownloadWord = async (id: string, fileName: string, status: string) => {
     setDownloading(id);
     try {
       const token = getToken();
@@ -118,7 +118,9 @@ export function LessonApprovalsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName.replace(/\.docx?$/i, '') + '_signed.docx';
+      link.download = status === 'approved'
+        ? fileName.replace(/\.docx?$/i, '') + '_signed.docx'
+        : fileName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -202,16 +204,16 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download signed Word file */}
-                  {a.status === 'approved' && (
-                    <button
-                      className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями'}
-                      disabled={downloading === a.id}
-                      onClick={() => handleDownloadWord(a.id, a.word_file_name)}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    </button>
-                  )}
+                  {/* Download Word file — available at any status so admins can review before approving */}
+                  <button
+                    className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
+                    title={a.status === 'approved'
+                      ? (lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями')
+                      : (lang === 'kz' ? 'Word жүктеу' : 'Скачать Word')}
+                    disabled={downloading === a.id}
+                    onClick={() => handleDownloadWord(a.id, a.word_file_name, a.status)}>
+                    {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  </button>
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
