@@ -27,7 +27,7 @@ export function SignaturePad({ onSave, onCancel, initialSignature, lang }: Signa
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#1a1a1a';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3.5;
 
     // Load initial signature if exists
     if (initialSignature) {

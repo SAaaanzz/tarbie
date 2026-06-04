@@ -330,26 +330,41 @@ async function injectSignaturesIntoDocx(
     );
   }
 
-  // Replace date underscores: "____  2026 ж." and "«_____»__________ 2026ж."
+  // Replace date underscores: "«_____»__________ 2026ж." and "____  2026 ж."
   if (doc.approved_at) {
     const d = new Date(doc.approved_at);
     const day = String(d.getDate()).padStart(2, '0');
     const months = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
     const monthKz = months[d.getMonth()] ?? '';
-    const year = d.getFullYear();
 
-    // Pattern: "____  2026 ж."
+    // Pattern A (most specific, run first): "«_____»__________ 2026ж." → "«04» маусым 2026ж."
+    // The «...» is the day placeholder and the following underscores are the month.
+    xml = xml.replace(
+      /«\s*_{2,}\s*»\s*_{2,}(\s*20\d{2}\s*ж\.?)/g,
+      `«${day}» ${monthKz}$1`
+    );
+
+    // Pattern B: bare "____ 2026 ж." (no day placeholder) → "«04» маусым 2026 ж."
     xml = xml.replace(
       /_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} $1`
-    );
-
-    // Pattern: "«_____»__________ 2026ж."
-    xml = xml.replace(
-      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} ${year} ж.`
+      `«${day}» ${monthKz}$1`
     );
   }
+
+  // Collapse the mandatory trailing empty paragraph that follows the final table.
+  // Word requires a paragraph after a table, and when the table fills the page it
+  // spills onto a blank second page; shrinking it keeps it on page one.
+  xml = xml.replace(
+    /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>(?=\s*<w:sectPr)/,
+    (para) => {
+      if (/<w:t[ >]/.test(para) || /<w:drawing/.test(para)) return para; // not empty — leave it
+      const open = para.match(/^<w:p\b[^>]*>/)?.[0] ?? '<w:p>';
+      const tinyPpr =
+        '<w:pPr><w:spacing w:after="0" w:line="20" w:lineRule="exact"/>' +
+        '<w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>';
+      return `${open}${tinyPpr}</w:p>`;
+    }
+  );
 
   // Save modified XML
   zip.file('word/document.xml', xml);
