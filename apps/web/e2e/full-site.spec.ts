@@ -558,8 +558,8 @@ test.describe('Admin Users Page', () => {
 
   test('role filter buttons work', async ({ page }) => {
     await goTo(page, '/admin/users');
-    // Click teacher filter
-    const teacherBtn = page.locator('button').filter({ hasText: /Учитель|Мұғалім/ }).first();
+    // Click curator filter (the "teacher" role is labelled "Куратор" in the UI)
+    const teacherBtn = page.locator('button').filter({ hasText: /Куратор/ }).first();
     await teacherBtn.click();
     await page.waitForTimeout(300);
   });
@@ -765,7 +765,7 @@ test.describe('Teacher Ratings Page', () => {
 
   test('renders ratings list with teacher names and scores', async ({ page }) => {
     await goTo(page, '/ratings');
-    await expect(page.getByRole('heading', { name: /Рейтинг учителей|Мұғалімдер рейтингі/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Рейтинг кураторов|Кураторлар рейтингі/ })).toBeVisible();
     await expect(page.locator('text=Тест Учитель')).toBeVisible();
     await expect(page.locator('text=Второй Учитель')).toBeVisible();
   });
@@ -960,12 +960,14 @@ test.describe('Teacher Role', () => {
     await expect(page.locator('button:has-text("Создать курс")')).toBeVisible();
   });
 
-  test('teacher does NOT see admin-only nav items', async ({ page }) => {
+  test('teacher (curator) sees user/class management but not admin-only ratings', async ({ page }) => {
     await setupMocks(page, TEACHER_USER);
     await goTo(page, '/');
     const sidebar = page.locator('aside');
-    await expect(sidebar.locator('a[href="/admin/users"]')).not.toBeVisible();
-    await expect(sidebar.locator('a[href="/admin/classes"]')).not.toBeVisible();
+    // Curators manage users & classes via /api/teacher, so these nav items are visible
+    await expect(sidebar.locator('a[href="/admin/users"]')).toBeVisible();
+    await expect(sidebar.locator('a[href="/admin/classes"]')).toBeVisible();
+    // The curator-ratings page is admin-only
     await expect(sidebar.locator('a[href="/ratings"]')).not.toBeVisible();
   });
 });
@@ -2425,12 +2427,13 @@ test.describe('12. Teacher Full Functional', () => {
     await expect(page.locator('body')).toBeVisible();
   });
 
-  test('teacher cannot see admin/users and admin/classes nav', async ({ page }) => {
+  test('teacher (curator) can see user and class management nav', async ({ page }) => {
     await setupBulkMocks(page, TEACHER_USER);
     await goTo(page, '/');
     const sidebar = page.locator('aside');
-    const adminLink = sidebar.locator('a[href="/admin/users"]');
-    expect(await adminLink.count()).toBe(0);
+    // Curators manage users & classes via /api/teacher, so the nav link is present
+    expect(await sidebar.locator('a[href="/admin/users"]').count()).toBe(1);
+    expect(await sidebar.locator('a[href="/admin/classes"]').count()).toBe(1);
   });
 
   test('all teacher pages render without JS errors', async ({ page }) => {
