@@ -338,4 +338,60 @@ lessonApprovals.get('/:id/file', async (c) => {
   });
 });
 
+// ── Convert an (already signed) .docx to PDF via ConvertAPI ──
+// The signature is baked into the .docx on the client; here we get a
+// pixel-perfect PDF (fonts/tables/columns preserved) without exposing the
+// ConvertAPI token to the browser. StoreFile=false keeps it in-memory.
+lessonApprovals.post('/convert-pdf', async (c) => {
+  const token = c.env.CONVERTAPI_TOKEN;
+  if (!token) {
+    return c.json({ success: false, message: 'PDF conversion is not configured' }, 500);
+  }
+
+  const inForm = await c.req.formData();
+  const file = inForm.get('file') as File | null;
+  if (!file || typeof file === 'string') {
+    return c.json({ success: false, code: ERROR_CODES.VALIDATION_ERROR, message: 'file is required' }, 400);
+  }
+
+  const caForm = new FormData();
+  caForm.append('File', file, file.name || 'document.docx');
+  caForm.append('StoreFile', 'false');
+
+  const resp = await fetch('https://v2.convertapi.com/convert/docx/to/pdf', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: caForm,
+  });
+
+  if (!resp.ok) {
+    const detail = await resp.text();
+    return c.json({ success: false, message: `ConvertAPI error ${resp.status}: ${detail.slice(0, 300)}` }, 502);
+  }
+
+  const data = await resp.json<{ Files?: { FileName?: string; FileData?: string }[] }>();
+  const out = data.Files?.[0];
+  if (!out?.FileData) {
+    return c.json({ success: false, message: 'ConvertAPI returned no file' }, 502);
+  }
+
+  const binaryStr = atob(out.FileData);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  const pdfName = (out.FileName || file.name.replace(/\.docx?$/i, '') + '.pdf');
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(pdfName)}"`,
+      'Content-Length': String(bytes.length),
+      'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+      'Access-Control-Allow-Credentials': 'true',
+    },
+  });
+});
+
 export { lessonApprovals };

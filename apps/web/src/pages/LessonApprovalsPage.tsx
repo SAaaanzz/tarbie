@@ -362,20 +362,20 @@ async function injectSignaturesIntoDocx(
     );
   }
 
-  // Collapse the mandatory trailing empty paragraph that follows the final table.
-  // Word requires a paragraph after a table, and when the table fills the page it
-  // spills onto a blank second page; shrinking it keeps it on page one.
-  xml = xml.replace(
-    /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>(?=\s*<w:sectPr)/,
-    (para) => {
-      if (/<w:t[ >]/.test(para) || /<w:drawing/.test(para)) return para; // not empty — leave it
-      const open = para.match(/^<w:p\b[^>]*>/)?.[0] ?? '<w:p>';
-      const tinyPpr =
-        '<w:pPr><w:spacing w:after="0" w:line="20" w:lineRule="exact"/>' +
-        '<w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>';
-      return `${open}${tinyPpr}</w:p>`;
-    }
-  );
+  // Drop empty filler paragraphs that sit directly before an explicit page
+  // break or the final section properties. These are pure vertical spacers;
+  // when they overflow the current page they push a blank page after signing
+  // (the "пустой 2 лист" issue). Removing them never affects layout past the
+  // break, since a page break resets to the top of the next page.
+  const emptyP = String.raw`<w:p\b[^>]*>(?:<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<\/w:pPr>)?<\/w:p>`;
+  const pageBreakP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:br w:type="page"\/>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>`;
+  const fillerBeforeBreak = new RegExp(`${emptyP}\\s*(?=${pageBreakP})`);
+  const fillerBeforeSect = new RegExp(`${emptyP}\\s*(?=<w:sectPr)`);
+  let prevXml: string;
+  do {
+    prevXml = xml;
+    xml = xml.replace(fillerBeforeBreak, '').replace(fillerBeforeSect, '');
+  } while (xml !== prevXml);
 
   // Save modified XML
   zip.file('word/document.xml', xml);
@@ -396,69 +396,30 @@ async function injectSignaturesIntoDocx(
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
 }
 
-// ── Convert the signed .docx to a flattened PDF entirely in the browser ──
-// Renders the document with docx-preview, rasterises each page with html2canvas
-// and assembles a PDF with jsPDF. The signature ends up baked into the page
-// image (not editable), columns/tables are preserved visually, and visually
-// empty pages are dropped.
+// ── Convert the signed .docx to a pixel-perfect PDF via the backend ──
+// The signature is already baked into the .docx; the worker proxies it to
+// ConvertAPI (token stays server-side) and returns the PDF bytes. Fonts,
+// tables and columns are preserved one-to-one with Word.
 async function convertDocxToPdf(docxBuffer: ArrayBuffer): Promise<Blob> {
-  const [{ renderAsync }, html2canvas, { jsPDF }] = await Promise.all([
-    import('docx-preview'),
-    import('html2canvas').then((m) => m.default),
-    import('jspdf'),
-  ]);
+  const token = getToken();
+  const form = new FormData();
+  form.append(
+    'file',
+    new Blob([docxBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }),
+    'document.docx'
+  );
 
-  const host = document.createElement('div');
-  host.style.position = 'fixed';
-  host.style.left = '-10000px';
-  host.style.top = '0';
-  host.style.background = '#ffffff';
-  document.body.appendChild(host);
+  const res = await fetch(`${API_BASE}/api/lesson-approvals/convert-pdf`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
 
-  try {
-    await renderAsync(docxBuffer, host, host, {
-      className: 'docx',
-      inWrapper: true,
-      breakPages: true,
-      ignoreLastRenderedPageBreak: false,
-    });
-    // Give embedded signature images a tick to decode.
-    await new Promise((r) => setTimeout(r, 150));
-
-    const pages = Array.from(host.querySelectorAll('section.docx')) as HTMLElement[];
-    const targets = pages.length ? pages : [host];
-
-    const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-
-    let added = 0;
-    for (const page of targets) {
-      const hasText = (page.textContent ?? '').trim().length > 0;
-      const hasVisual = !!page.querySelector('img, svg, canvas, table');
-      if (!hasText && !hasVisual) continue; // skip blank pages
-
-      const canvas = await html2canvas(page, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false,
-      });
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      if (added > 0) pdf.addPage();
-      const scaledH = (canvas.height * pageW) / canvas.width;
-      if (scaledH <= pageH) {
-        pdf.addImage(imgData, 'JPEG', 0, 0, pageW, scaledH);
-      } else {
-        const scaledW = (canvas.width * pageH) / canvas.height;
-        pdf.addImage(imgData, 'JPEG', (pageW - scaledW) / 2, 0, scaledW, pageH);
-      }
-      added++;
-    }
-
-    if (added === 0) throw new Error('No renderable content for PDF');
-    return pdf.output('blob');
-  } finally {
-    document.body.removeChild(host);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`PDF conversion failed (${res.status}): ${detail.slice(0, 200)}`);
   }
+  return res.blob();
 }

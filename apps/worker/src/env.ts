@@ -12,6 +12,7 @@ export interface Env {
   APP_URL: string;
   GEMINI_API_KEY: string;
   PREMIUM_SECRET: string;
+  CONVERTAPI_TOKEN: string;
 }
 
 export interface AuthUser {
