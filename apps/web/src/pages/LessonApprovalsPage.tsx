@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
-  Download,
+  Download, Eye,
 } from 'lucide-react';
 import JSZip from 'jszip';
 
@@ -239,12 +239,12 @@ export function LessonApprovalsPage() {
                       {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                     </button>
                   )}
-                  {/* Admin: download to review before signing */}
-                  {isAdmin && a.status === 'pending' && (
+                  {/* Admin: download the original (unsigned) file to review, available for any status */}
+                  {isAdmin && (
                     <button onClick={() => handlePreviewWord(a.id, a.word_file_name)} disabled={downloading === a.id}
                       className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-                      title={lang === 'kz' ? 'Қарап шығу үшін жүктеу' : 'Скачать для просмотра'}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                      title={lang === 'kz' ? 'Түпнұсқаны қарап шығу үшін жүктеу' : 'Скачать оригинал для проверки'}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
                     </button>
                   )}
                   {/* Admin approve/reject */}
