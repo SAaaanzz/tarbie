@@ -113,14 +113,25 @@ export function LessonApprovalsPage() {
       // 3. Modify the .docx — inject signatures directly into Word XML
       const signedDocx = await injectSignaturesIntoDocx(arrayBuffer, doc);
 
-      // 4. Trigger download
-      const blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      // 4. Flatten to PDF so the signature is baked in and can't be edited/forged.
+      //    Falls back to .docx if the in-browser conversion fails for any reason.
+      const baseName = fileName.replace(/\.docx?$/i, '') + (status === 'approved' ? '_signed' : '');
+      let blob: Blob;
+      let downloadName: string;
+      try {
+        blob = await convertDocxToPdf(signedDocx);
+        downloadName = baseName + '.pdf';
+      } catch (pdfErr) {
+        console.error('PDF conversion failed, falling back to .docx', pdfErr);
+        blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        downloadName = status === 'approved' ? baseName + '.docx' : fileName;
+      }
+
+      // 5. Trigger download
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = status === 'approved'
-        ? fileName.replace(/\.docx?$/i, '') + '_signed.docx'
-        : fileName;
+      link.download = downloadName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -208,8 +219,8 @@ export function LessonApprovalsPage() {
                   <button
                     className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
                     title={a.status === 'approved'
-                      ? (lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями')
-                      : (lang === 'kz' ? 'Word жүктеу' : 'Скачать Word')}
+                      ? (lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями')
+                      : (lang === 'kz' ? 'PDF жүктеу' : 'Скачать PDF')}
                     disabled={downloading === a.id}
                     onClick={() => handleDownloadWord(a.id, a.word_file_name, a.status)}>
                     {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
@@ -383,4 +394,71 @@ async function injectSignaturesIntoDocx(
   zip.file('word/_rels/document.xml.rels', relsXml);
 
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+}
+
+// ── Convert the signed .docx to a flattened PDF entirely in the browser ──
+// Renders the document with docx-preview, rasterises each page with html2canvas
+// and assembles a PDF with jsPDF. The signature ends up baked into the page
+// image (not editable), columns/tables are preserved visually, and visually
+// empty pages are dropped.
+async function convertDocxToPdf(docxBuffer: ArrayBuffer): Promise<Blob> {
+  const [{ renderAsync }, html2canvas, { jsPDF }] = await Promise.all([
+    import('docx-preview'),
+    import('html2canvas').then((m) => m.default),
+    import('jspdf'),
+  ]);
+
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.left = '-10000px';
+  host.style.top = '0';
+  host.style.background = '#ffffff';
+  document.body.appendChild(host);
+
+  try {
+    await renderAsync(docxBuffer, host, host, {
+      className: 'docx',
+      inWrapper: true,
+      breakPages: true,
+      ignoreLastRenderedPageBreak: false,
+    });
+    // Give embedded signature images a tick to decode.
+    await new Promise((r) => setTimeout(r, 150));
+
+    const pages = Array.from(host.querySelectorAll('section.docx')) as HTMLElement[];
+    const targets = pages.length ? pages : [host];
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+
+    let added = 0;
+    for (const page of targets) {
+      const hasText = (page.textContent ?? '').trim().length > 0;
+      const hasVisual = !!page.querySelector('img, svg, canvas, table');
+      if (!hasText && !hasVisual) continue; // skip blank pages
+
+      const canvas = await html2canvas(page, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      if (added > 0) pdf.addPage();
+      const scaledH = (canvas.height * pageW) / canvas.width;
+      if (scaledH <= pageH) {
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageW, scaledH);
+      } else {
+        const scaledW = (canvas.width * pageH) / canvas.height;
+        pdf.addImage(imgData, 'JPEG', (pageW - scaledW) / 2, 0, scaledW, pageH);
+      }
+      added++;
+    }
+
+    if (added === 0) throw new Error('No renderable content for PDF');
+    return pdf.output('blob');
+  } finally {
+    document.body.removeChild(host);
+  }
 }
