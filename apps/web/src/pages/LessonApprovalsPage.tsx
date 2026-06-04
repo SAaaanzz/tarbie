@@ -71,6 +71,33 @@ export function LessonApprovalsPage() {
 
   useEffect(() => { loadApprovals(); }, [tab]);
 
+  const handlePreviewWord = async (id: string, fileName: string) => {
+    setDownloading(id);
+    try {
+      const token = getToken();
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
+        return;
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const handleApprove = async (id: string) => {
     setSubmitting(id);
     try {
@@ -212,6 +239,14 @@ export function LessonApprovalsPage() {
                       {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                     </button>
                   )}
+                  {/* Admin: download to review before signing */}
+                  {isAdmin && a.status === 'pending' && (
+                    <button onClick={() => handlePreviewWord(a.id, a.word_file_name)} disabled={downloading === a.id}
+                      className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                      title={lang === 'kz' ? 'Қарап шығу үшін жүктеу' : 'Скачать для просмотра'}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    </button>
+                  )}
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
@@ -306,7 +341,7 @@ async function injectSignaturesIntoDocx(
   // Replace underscore text runs with signature images in the XML
   // Pattern: text nodes containing "____...А.Абдраймова" → admin signature 1
   if (adminSigRId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(adminSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*_{3,}\s*)(А\.?\s*Абдраймова)(<\/w:t>)/g,
       (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
@@ -320,7 +355,7 @@ async function injectSignaturesIntoDocx(
 
   // Pattern: "____...Сонурова Мехирам Мухтаровна" → admin signature 2
   if (adminSig2RId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSig2RId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(adminSig2RId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*_{3,}\s*)(Сонурова[^<]*)(<\/w:t>)/g,
       (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
@@ -333,7 +368,7 @@ async function injectSignaturesIntoDocx(
 
   // Pattern: "Топ жетекшісі: ____..." → curator signature
   if (curatorSigRId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(curatorSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(curatorSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*Топ жетекшісі:\s*)_{3,}([^<]*)(<\/w:t>)/g,
       (_, open, prefix, suffix, close) => `${open}${prefix}${imgXml} ${suffix}${close}`
