@@ -262,6 +262,18 @@ function makeInlineImageXml(rId: string, cx: number, cy: number): string {
     `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
 }
 
+// Remove redundant empty paragraphs that pad the document out to a blank page.
+// Curators often insert many empty lines before a manual page break; together with
+// the page break this overflows into an extra blank page in Word. The page break
+// already moves the following content onto the next page, so the leading empty
+// paragraphs are safe to drop (they contain no text, image, break or table).
+function removeBlankPagePadding(xml: string): string {
+  const emptyP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>|<w:t[ >]|<w:drawing|<w:br|<w:tbl|<w:pict)[\s\S])*?<\/w:p>`;
+  const pageBreakP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:br w:type="page"\/>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>`;
+  const padding = new RegExp(`(?:${emptyP})+(?=${pageBreakP})`, 'g');
+  return xml.replace(padding, '');
+}
+
 async function injectSignaturesIntoDocx(
   docxBuffer: ArrayBuffer,
   doc: DocumentData
@@ -328,26 +340,30 @@ async function injectSignaturesIntoDocx(
     );
   }
 
-  // Replace date underscores: "____  2026 ж." and "«_____»__________ 2026ж."
+  // Replace date underscores: "«_____»__________ 2026ж." and "____  2026 ж."
   if (doc.approved_at) {
     const d = new Date(doc.approved_at);
     const day = String(d.getDate()).padStart(2, '0');
     const months = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
     const monthKz = months[d.getMonth()] ?? '';
-    const year = d.getFullYear();
 
-    // Pattern: "____  2026 ж."
+    // Specific pattern first: "«_____»__________ 2026ж.".
+    // Must run before the generic rule below, otherwise the generic rule consumes
+    // only the trailing underscores and leaves a stray "«_____»" in the document.
     xml = xml.replace(
-      /_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} $1`
+      /«_{3,}»\s*_{3,}\s*(20\d{2})\s*(ж\.?)/g,
+      `«${day}» ${monthKz} $1 $2`
     );
 
-    // Pattern: "«_____»__________ 2026ж."
+    // Generic pattern: "____  2026 ж."
     xml = xml.replace(
-      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} ${year} ж.`
+      /_{3,}\s*(20\d{2})\s*(ж\.?)/g,
+      `«${day}» ${monthKz} $1 $2`
     );
   }
+
+  // Drop padding empty paragraphs so Word does not render a blank page
+  xml = removeBlankPagePadding(xml);
 
   // Save modified XML
   zip.file('word/document.xml', xml);
