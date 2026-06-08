@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
-  Download,
+  Download, Eye,
 } from 'lucide-react';
 import JSZip from 'jszip';
 
@@ -70,6 +70,33 @@ export function LessonApprovalsPage() {
   };
 
   useEffect(() => { loadApprovals(); }, [tab]);
+
+  const handlePreviewWord = async (id: string, fileName: string) => {
+    setDownloading(id);
+    try {
+      const token = getToken();
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
+        return;
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   const handleApprove = async (id: string) => {
     setSubmitting(id);
@@ -212,6 +239,14 @@ export function LessonApprovalsPage() {
                       {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                     </button>
                   )}
+                  {/* Admin: download the original (unsigned) file to review, available for any status */}
+                  {isAdmin && (
+                    <button onClick={() => handlePreviewWord(a.id, a.word_file_name)} disabled={downloading === a.id}
+                      className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                      title={lang === 'kz' ? 'Түпнұсқаны қарап шығу үшін жүктеу' : 'Скачать оригинал для проверки'}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
+                    </button>
+                  )}
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
@@ -262,6 +297,18 @@ function makeInlineImageXml(rId: string, cx: number, cy: number): string {
     `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
 }
 
+// Remove redundant empty paragraphs that pad the document out to a blank page.
+// Curators often insert many empty lines before a manual page break; together with
+// the page break this overflows into an extra blank page in Word. The page break
+// already moves the following content onto the next page, so the leading empty
+// paragraphs are safe to drop (they contain no text, image, break or table).
+function removeBlankPagePadding(xml: string): string {
+  const emptyP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>|<w:t[ >]|<w:drawing|<w:br|<w:tbl|<w:pict)[\s\S])*?<\/w:p>`;
+  const pageBreakP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:br w:type="page"\/>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>`;
+  const padding = new RegExp(`(?:${emptyP})+(?=${pageBreakP})`, 'g');
+  return xml.replace(padding, '');
+}
+
 async function injectSignaturesIntoDocx(
   docxBuffer: ArrayBuffer,
   doc: DocumentData
@@ -294,7 +341,7 @@ async function injectSignaturesIntoDocx(
   // Replace underscore text runs with signature images in the XML
   // Pattern: text nodes containing "____...А.Абдраймова" → admin signature 1
   if (adminSigRId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(adminSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*_{3,}\s*)(А\.?\s*Абдраймова)(<\/w:t>)/g,
       (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
@@ -308,7 +355,7 @@ async function injectSignaturesIntoDocx(
 
   // Pattern: "____...Сонурова Мехирам Мухтаровна" → admin signature 2
   if (adminSig2RId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(adminSig2RId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(adminSig2RId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*_{3,}\s*)(Сонурова[^<]*)(<\/w:t>)/g,
       (_, open, _underscores, name, close) => `${open}${imgXml} ${name}${close}`
@@ -321,33 +368,37 @@ async function injectSignaturesIntoDocx(
 
   // Pattern: "Топ жетекшісі: ____..." → curator signature
   if (curatorSigRId) {
-    const imgXml = `</w:t></w:r><w:r><w:rPr/>${makeInlineImageXml(curatorSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
+    const imgXml = `</w:t></w:r><w:r><w:rPr><w:position w:val="-12"/></w:rPr>${makeInlineImageXml(curatorSigRId, sigW, sigH)}</w:r><w:r><w:t xml:space="preserve">`;
     xml = xml.replace(
       /(<w:t[^>]*>)([^<]*Топ жетекшісі:\s*)_{3,}([^<]*)(<\/w:t>)/g,
       (_, open, prefix, suffix, close) => `${open}${prefix}${imgXml} ${suffix}${close}`
     );
   }
 
-  // Replace date underscores: "____  2026 ж." and "«_____»__________ 2026ж."
+  // Replace date underscores: "«_____»__________ 2026ж." and "____  2026 ж."
   if (doc.approved_at) {
     const d = new Date(doc.approved_at);
     const day = String(d.getDate()).padStart(2, '0');
     const months = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
     const monthKz = months[d.getMonth()] ?? '';
-    const year = d.getFullYear();
 
-    // Pattern: "____  2026 ж."
+    // Specific pattern first: "«_____»__________ 2026ж.".
+    // Must run before the generic rule below, otherwise the generic rule consumes
+    // only the trailing underscores and leaves a stray "«_____»" in the document.
     xml = xml.replace(
-      /_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} $1`
+      /«_{3,}»\s*_{3,}\s*(20\d{2})\s*(ж\.?)/g,
+      `«${day}» ${monthKz} $1 $2`
     );
 
-    // Pattern: "«_____»__________ 2026ж."
+    // Generic pattern: "____  2026 ж."
     xml = xml.replace(
-      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} ${year} ж.`
+      /_{3,}\s*(20\d{2})\s*(ж\.?)/g,
+      `«${day}» ${monthKz} $1 $2`
     );
   }
+
+  // Drop padding empty paragraphs so Word does not render a blank page
+  xml = removeBlankPagePadding(xml);
 
   // Save modified XML
   zip.file('word/document.xml', xml);
