@@ -91,7 +91,7 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const handleDownloadWord = async (id: string, fileName: string) => {
+  const handleDownloadWord = async (id: string, fileName: string, status: string) => {
     setDownloading(id);
     try {
       const token = getToken();
@@ -113,12 +113,25 @@ export function LessonApprovalsPage() {
       // 3. Modify the .docx — inject signatures directly into Word XML
       const signedDocx = await injectSignaturesIntoDocx(arrayBuffer, doc);
 
-      // 4. Trigger download
-      const blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      // 4. Flatten to PDF so the signature is baked in and can't be edited/forged.
+      //    Falls back to .docx if the in-browser conversion fails for any reason.
+      const baseName = fileName.replace(/\.docx?$/i, '') + (status === 'approved' ? '_signed' : '');
+      let blob: Blob;
+      let downloadName: string;
+      try {
+        blob = await convertDocxToPdf(signedDocx);
+        downloadName = baseName + '.pdf';
+      } catch (pdfErr) {
+        console.error('PDF conversion failed, falling back to .docx', pdfErr);
+        blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        downloadName = status === 'approved' ? baseName + '.docx' : fileName;
+      }
+
+      // 5. Trigger download
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName.replace(/\.docx?$/i, '') + '_signed.docx';
+      link.download = downloadName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -202,16 +215,16 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download signed Word file */}
-                  {a.status === 'approved' && (
-                    <button
-                      className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями'}
-                      disabled={downloading === a.id}
-                      onClick={() => handleDownloadWord(a.id, a.word_file_name)}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    </button>
-                  )}
+                  {/* Download Word file — available at any status so admins can review before approving */}
+                  <button
+                    className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
+                    title={a.status === 'approved'
+                      ? (lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями')
+                      : (lang === 'kz' ? 'PDF жүктеу' : 'Скачать PDF')}
+                    disabled={downloading === a.id}
+                    onClick={() => handleDownloadWord(a.id, a.word_file_name, a.status)}>
+                    {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  </button>
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
@@ -328,26 +341,41 @@ async function injectSignaturesIntoDocx(
     );
   }
 
-  // Replace date underscores: "____  2026 ж." and "«_____»__________ 2026ж."
+  // Replace date underscores: "«_____»__________ 2026ж." and "____  2026 ж."
   if (doc.approved_at) {
     const d = new Date(doc.approved_at);
     const day = String(d.getDate()).padStart(2, '0');
     const months = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
     const monthKz = months[d.getMonth()] ?? '';
-    const year = d.getFullYear();
 
-    // Pattern: "____  2026 ж."
+    // Pattern A (most specific, run first): "«_____»__________ 2026ж." → "«04» маусым 2026ж."
+    // The «...» is the day placeholder and the following underscores are the month.
+    xml = xml.replace(
+      /«\s*_{2,}\s*»\s*_{2,}(\s*20\d{2}\s*ж\.?)/g,
+      `«${day}» ${monthKz}$1`
+    );
+
+    // Pattern B: bare "____ 2026 ж." (no day placeholder) → "«04» маусым 2026 ж."
     xml = xml.replace(
       /_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} $1`
-    );
-
-    // Pattern: "«_____»__________ 2026ж."
-    xml = xml.replace(
-      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} ${year} ж.`
+      `«${day}» ${monthKz}$1`
     );
   }
+
+  // Drop empty filler paragraphs that sit directly before an explicit page
+  // break or the final section properties. These are pure vertical spacers;
+  // when they overflow the current page they push a blank page after signing
+  // (the "пустой 2 лист" issue). Removing them never affects layout past the
+  // break, since a page break resets to the top of the next page.
+  const emptyP = String.raw`<w:p\b[^>]*>(?:<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<\/w:pPr>)?<\/w:p>`;
+  const pageBreakP = String.raw`<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:br w:type="page"\/>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>`;
+  const fillerBeforeBreak = new RegExp(`${emptyP}\\s*(?=${pageBreakP})`);
+  const fillerBeforeSect = new RegExp(`${emptyP}\\s*(?=<w:sectPr)`);
+  let prevXml: string;
+  do {
+    prevXml = xml;
+    xml = xml.replace(fillerBeforeBreak, '').replace(fillerBeforeSect, '');
+  } while (xml !== prevXml);
 
   // Save modified XML
   zip.file('word/document.xml', xml);
@@ -366,4 +394,32 @@ async function injectSignaturesIntoDocx(
   zip.file('word/_rels/document.xml.rels', relsXml);
 
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+}
+
+// ── Convert the signed .docx to a pixel-perfect PDF via the backend ──
+// The signature is already baked into the .docx; the worker proxies it to
+// ConvertAPI (token stays server-side) and returns the PDF bytes. Fonts,
+// tables and columns are preserved one-to-one with Word.
+async function convertDocxToPdf(docxBuffer: ArrayBuffer): Promise<Blob> {
+  const token = getToken();
+  const form = new FormData();
+  form.append(
+    'file',
+    new Blob([docxBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }),
+    'document.docx'
+  );
+
+  const res = await fetch(`${API_BASE}/api/lesson-approvals/convert-pdf`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`PDF conversion failed (${res.status}): ${detail.slice(0, 200)}`);
+  }
+  return res.blob();
 }
