@@ -12,6 +12,8 @@ export interface Env {
   APP_URL: string;
   GEMINI_API_KEY: string;
   PREMIUM_SECRET: string;
+  // ConvertAPI token for Word → PDF conversion (set via `wrangler secret put CONVERT_API_KEY`)
+  CONVERT_API_KEY?: string;
 }
 
 export interface AuthUser {

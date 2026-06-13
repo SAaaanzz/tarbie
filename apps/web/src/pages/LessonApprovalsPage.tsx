@@ -128,6 +128,52 @@ export function LessonApprovalsPage() {
     }
   };
 
+  // Download the signed document as PDF (server-side ConvertAPI, exact Word layout)
+  const handleDownloadPdf = async (id: string, fileName: string) => {
+    setDownloading(id);
+    try {
+      const token = getToken();
+      const doc = await api.get<DocumentData>(`/api/lesson-approvals/${id}/document`);
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
+        return;
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const signedDocx = await injectSignaturesIntoDocx(arrayBuffer, doc);
+
+      // Send the signed .docx to the worker, which converts it to PDF (key stays server-side)
+      const pdfRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/pdf`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+        body: signedDocx,
+      });
+      if (!pdfRes.ok) {
+        const errText = await pdfRes.text();
+        alert(`Ошибка PDF (${pdfRes.status}): ${errText.slice(0, 200)}`);
+        return;
+      }
+      const pdfBuf = await pdfRes.arrayBuffer();
+      const blob = new Blob([pdfBuf], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName.replace(/\.docx?$/i, '') + '_signed.pdf';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   // Download the original uploaded document (for review before signing)
   const handleDownloadOriginal = async (id: string, fileName: string) => {
     setDownloading(id);
@@ -238,6 +284,16 @@ export function LessonApprovalsPage() {
                       disabled={downloading === a.id}
                       onClick={() => handleDownloadOriginal(a.id, a.word_file_name)}>
                       {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    </button>
+                  )}
+                  {/* Download signed document as PDF (exact Word layout) */}
+                  {a.status === 'approved' && (
+                    <button
+                      className="rounded-lg p-2 text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                      title={lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями'}
+                      disabled={downloading === a.id}
+                      onClick={() => handleDownloadPdf(a.id, a.word_file_name)}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                     </button>
                   )}
                   {/* Download signed Word file (with signatures + filled date) */}

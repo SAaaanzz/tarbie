@@ -338,4 +338,65 @@ lessonApprovals.get('/:id/file', async (c) => {
   });
 });
 
+// ── Convert a (signed) .docx to PDF via ConvertAPI, return the PDF ──
+// The client generates the signed .docx (signatures injected) and POSTs the
+// raw bytes here; the API key stays server-side and never reaches the browser.
+lessonApprovals.post('/:id/pdf', async (c) => {
+  const user = c.get('user');
+  const approvalId = c.req.param('id');
+
+  const approval = await c.env.DB.prepare(
+    'SELECT word_file_name, school_id FROM lesson_approvals WHERE id = ?'
+  ).bind(approvalId).first<{ word_file_name: string; school_id: string }>();
+  if (!approval || approval.school_id !== user.school_id) {
+    return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Not found' }, 404);
+  }
+
+  const apiKey = c.env.CONVERT_API_KEY;
+  if (!apiKey) {
+    return c.json({ success: false, message: 'PDF конвертация не настроена: задайте секрет CONVERT_API_KEY' }, 503);
+  }
+
+  const docxBytes = new Uint8Array(await c.req.arrayBuffer());
+  if (docxBytes.length === 0) {
+    return c.json({ success: false, message: 'Пустой документ' }, 400);
+  }
+
+  const form = new FormData();
+  form.append('File', new Blob([docxBytes], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  }), 'document.docx');
+
+  const convRes = await fetch('https://v2.convertapi.com/convert/docx/to/pdf?StoreFile=false', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!convRes.ok) {
+    const errText = await convRes.text();
+    return c.json({ success: false, message: `Конвертация не удалась (${convRes.status}): ${errText.slice(0, 200)}` }, 502);
+  }
+  const result = await convRes.json() as { Files?: Array<{ FileData?: string }> };
+  const fileData = result.Files?.[0]?.FileData;
+  if (!fileData) {
+    return c.json({ success: false, message: 'Конвертер не вернул файл' }, 502);
+  }
+
+  const binaryStr = atob(fileData);
+  const pdfBytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) pdfBytes[i] = binaryStr.charCodeAt(i);
+
+  const pdfName = approval.word_file_name.replace(/\.docx?$/i, '') + '_signed.pdf';
+  return new Response(pdfBytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(pdfName)}"`,
+      'Content-Length': String(pdfBytes.length),
+      'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+      'Access-Control-Allow-Credentials': 'true',
+    },
+  });
+});
+
 export { lessonApprovals };
