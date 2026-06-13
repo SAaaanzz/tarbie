@@ -108,7 +108,7 @@ export function DashboardPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
               <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                 {chartData.map((entry, index) => (
                   <Cell key={index} fill={entry.color} />
@@ -146,6 +146,24 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChartTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: { name: string; color: string } }>;
+}) {
+  const first = payload?.[0];
+  if (!active || !first) return null;
+  const item = first.payload;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm">
+      <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+        {item.name}
+      </p>
+      <p className="mt-0.5 text-sm text-gray-600">{first.value}</p>
     </div>
   );
 }
