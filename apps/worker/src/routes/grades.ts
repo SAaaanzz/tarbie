@@ -106,7 +106,7 @@ grades.get('/sessions/:sessionId/grades', async (c) => {
   return c.json({ success: true, data: rows.results });
 });
 
-// ── Bulk update grades for a session (mark present/absent/makeup, set grade 0-10) ──
+// ── Bulk update grades for a session (mark present/absent/makeup, set grade 0-100) ──
 grades.put('/sessions/:sessionId/grades', requireRole('admin', 'teacher'), async (c) => {
   const user = c.get('user');
   const sessionId = c.req.param('sessionId');
