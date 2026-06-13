@@ -230,15 +230,17 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download the original uploaded document (review before signing) */}
-                  <button
-                    className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-                    title={lang === 'kz' ? 'Құжатты жүктеу (қол қою үшін)' : 'Скачать документ (для подписания)'}
-                    disabled={downloading === a.id}
-                    onClick={() => handleDownloadOriginal(a.id, a.word_file_name)}>
-                    {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                  </button>
-                  {/* Download signed Word file */}
+                  {/* Download the ORIGINAL (no signatures) — only for not-yet-approved, for review */}
+                  {a.status !== 'approved' && (
+                    <button
+                      className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                      title={lang === 'kz' ? 'Түпнұсқаны жүктеу (қарап шығу, қолтаңбасыз)' : 'Скачать оригинал (для проверки, без подписей)'}
+                      disabled={downloading === a.id}
+                      onClick={() => handleDownloadOriginal(a.id, a.word_file_name)}>
+                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    </button>
+                  )}
+                  {/* Download signed Word file (with signatures + filled date) */}
                   {a.status === 'approved' && (
                     <button
                       className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
