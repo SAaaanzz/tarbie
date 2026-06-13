@@ -367,9 +367,8 @@ lessonApprovals.post('/:id/pdf', async (c) => {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   }), 'document.docx');
 
-  const convRes = await fetch('https://v2.convertapi.com/convert/docx/to/pdf?StoreFile=false', {
+  const convRes = await fetch(`https://v2.convertapi.com/convert/docx/to/pdf?Secret=${encodeURIComponent(apiKey)}&StoreFile=false`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
   if (!convRes.ok) {

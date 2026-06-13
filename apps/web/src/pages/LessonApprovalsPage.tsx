@@ -3,7 +3,6 @@ import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
   Loader2, FileText, CheckCircle2, XCircle, Clock,
-  Download,
 } from 'lucide-react';
 import JSZip from 'jszip';
 
@@ -91,43 +90,6 @@ export function LessonApprovalsPage() {
     setSubmitting(null);
   };
 
-  const handleDownloadWord = async (id: string, fileName: string) => {
-    setDownloading(id);
-    try {
-      const token = getToken();
-
-      // 1. Get signatures/metadata
-      const doc = await api.get<DocumentData>(`/api/lesson-approvals/${id}/document`);
-
-      // 2. Download the Word file
-      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!fileRes.ok) {
-        const errText = await fileRes.text();
-        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
-        return;
-      }
-      const arrayBuffer = await fileRes.arrayBuffer();
-
-      // 3. Modify the .docx — inject signatures directly into Word XML
-      const signedDocx = await injectSignaturesIntoDocx(arrayBuffer, doc);
-
-      // 4. Trigger download
-      const blob = new Blob([signedDocx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName.replace(/\.docx?$/i, '') + '_signed.docx';
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setDownloading(null);
-    }
-  };
-
   // Download the signed document as PDF (server-side ConvertAPI, exact Word layout)
   const handleDownloadPdf = async (id: string, fileName: string) => {
     setDownloading(id);
@@ -165,34 +127,6 @@ export function LessonApprovalsPage() {
       const link = document.createElement('a');
       link.href = url;
       link.download = fileName.replace(/\.docx?$/i, '') + '_signed.pdf';
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setDownloading(null);
-    }
-  };
-
-  // Download the original uploaded document (for review before signing)
-  const handleDownloadOriginal = async (id: string, fileName: string) => {
-    setDownloading(id);
-    try {
-      const token = getToken();
-      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!fileRes.ok) {
-        const errText = await fileRes.text();
-        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
-        return;
-      }
-      const arrayBuffer = await fileRes.arrayBuffer();
-      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -276,36 +210,16 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Download the ORIGINAL (no signatures) — only for not-yet-approved, for review */}
-                  {a.status !== 'approved' && (
-                    <button
-                      className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-                      title={lang === 'kz' ? 'Түпнұсқаны жүктеу (қарап шығу, қолтаңбасыз)' : 'Скачать оригинал (для проверки, без подписей)'}
-                      disabled={downloading === a.id}
-                      onClick={() => handleDownloadOriginal(a.id, a.word_file_name)}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    </button>
-                  )}
-                  {/* Download signed document as PDF (exact Word layout) */}
-                  {a.status === 'approved' && (
-                    <button
-                      className="rounded-lg p-2 text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
-                      title={lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями'}
-                      disabled={downloading === a.id}
-                      onClick={() => handleDownloadPdf(a.id, a.word_file_name)}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                    </button>
-                  )}
-                  {/* Download signed Word file (with signatures + filled date) */}
-                  {a.status === 'approved' && (
-                    <button
-                      className="rounded-lg p-2 text-green-600 bg-green-50 hover:bg-green-100 transition-colors"
-                      title={lang === 'kz' ? 'Word жүктеу (қолтаңбамен)' : 'Скачать Word с подписями'}
-                      disabled={downloading === a.id}
-                      onClick={() => handleDownloadWord(a.id, a.word_file_name)}>
-                      {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    </button>
-                  )}
+                  {/* PDF only — Word download is disabled so signatures can't be moved/edited */}
+                  <button
+                    className="rounded-lg p-2 text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                    title={a.status === 'approved'
+                      ? (lang === 'kz' ? 'PDF жүктеу (қолтаңбамен)' : 'Скачать PDF с подписями')
+                      : (lang === 'kz' ? 'PDF жүктеу (қарап шығу)' : 'Скачать PDF (для проверки)')}
+                    disabled={downloading === a.id}
+                    onClick={() => handleDownloadPdf(a.id, a.word_file_name)}>
+                    {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                  </button>
                   {/* Admin approve/reject */}
                   {isAdmin && a.status === 'pending' && (
                     <>
