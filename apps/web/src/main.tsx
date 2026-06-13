@@ -1697,6 +1697,10 @@ function ViewStudentsModal({ lang, apiBase, classId, onClose, onChanged }: {
   );
 }
 
+// Build tag — bump to force fresh asset hashes (busts poisoned CDN cache).
+const BUILD_TAG = '2026.06.13-r2';
+console.info(`Tarbie Sagaty build ${BUILD_TAG}`);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
