@@ -128,6 +128,34 @@ export function LessonApprovalsPage() {
     }
   };
 
+  // Download the original uploaded document (for review before signing)
+  const handleDownloadOriginal = async (id: string, fileName: string) => {
+    setDownloading(id);
+    try {
+      const token = getToken();
+      const fileRes = await fetch(`${API_BASE}/api/lesson-approvals/${id}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!fileRes.ok) {
+        const errText = await fileRes.text();
+        alert(`Ошибка (${fileRes.status}): ${errText.slice(0, 150)}`);
+        return;
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const statusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -202,6 +230,14 @@ export function LessonApprovalsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Download the original uploaded document (review before signing) */}
+                  <button
+                    className="rounded-lg p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                    title={lang === 'kz' ? 'Құжатты жүктеу (қол қою үшін)' : 'Скачать документ (для подписания)'}
+                    disabled={downloading === a.id}
+                    onClick={() => handleDownloadOriginal(a.id, a.word_file_name)}>
+                    {downloading === a.id ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  </button>
                   {/* Download signed Word file */}
                   {a.status === 'approved' && (
                     <button
@@ -288,8 +324,8 @@ async function injectSignaturesIntoDocx(
   const curatorSigRId = addSigImage(doc.curator_signature);
 
   // Signature size: ~2cm wide x 0.8cm tall in EMUs (1cm = 360000 EMUs)
-  const sigW = 720000;
-  const sigH = 288000;
+  const sigW = 540000;
+  const sigH = 216000;
 
   // Replace underscore text runs with signature images in the XML
   // Pattern: text nodes containing "____...А.Абдраймова" → admin signature 1
@@ -336,16 +372,19 @@ async function injectSignaturesIntoDocx(
     const monthKz = months[d.getMonth()] ?? '';
     const year = d.getFullYear();
 
-    // Pattern: "____  2026 ж."
+    // IMPORTANT: handle the specific "«_____»__________ 2026ж." pattern FIRST,
+    // otherwise the generic underscore pattern below eats "__________ 2026ж."
+    // and leaves a stray "«_____»" → "«_____»«13» маусым 2026ж.".
+    // Tolerant of a run boundary between the «day» and the month underscores.
+    xml = xml.replace(
+      /«_{3,}»(?:<\/w:t>.*?<w:t[^>]*>)?\s*_{3,}(\s*20\d{2}\s*ж\.?)/gs,
+      `«${day}» ${monthKz} ${year} ж.`
+    );
+
+    // Generic: bare "____  2026 ж." (e.g. the deputy-director line) → «day» month year
     xml = xml.replace(
       /_{3,}(\s*20\d{2}\s*ж\.?)/g,
       `«${day}» ${monthKz} $1`
-    );
-
-    // Pattern: "«_____»__________ 2026ж."
-    xml = xml.replace(
-      /«_{3,}»_{3,}(\s*20\d{2}\s*ж\.?)/g,
-      `«${day}» ${monthKz} ${year} ж.`
     );
   }
 
