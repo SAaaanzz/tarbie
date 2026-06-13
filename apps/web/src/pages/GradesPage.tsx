@@ -69,6 +69,14 @@ function gradeColor(g: number): string {
   return 'text-red-700 bg-red-100';
 }
 
+// Solid circle color for the student's average grade: red → green by score.
+function avgCircleClasses(avg: number): string {
+  if (avg >= 90) return 'bg-green-500 text-white';   // 90-100 — отлично, зелёный
+  if (avg >= 70) return 'bg-lime-500 text-white';    // 70-90 — хорошо, жёлто-зелёный
+  if (avg >= 50) return 'bg-yellow-400 text-gray-900'; // 50-70 — жёлтый
+  return 'bg-red-500 text-white';                    // <50 — красный
+}
+
 function statusIcon(s: string) {
   if (s === 'present') return <CheckCircle2 size={14} className="text-green-600" />;
   if (s === 'makeup') return <RotateCcw size={14} className="text-blue-600" />;
@@ -553,15 +561,16 @@ function StudentView({ lang, userId }: { lang: 'kz' | 'ru'; userId: string }) {
       {monthly.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {monthly.map((m) => (
-            <div key={m.class_id} className="card text-center">
-              <p className="text-sm font-medium text-gray-500">{m.class_name}</p>
-              <p className={`mt-2 text-3xl font-bold ${m.total_sessions > 0 ? gradeColor(m.average).split(' ')[0]! : 'text-gray-400'}`}>
+            <div key={m.class_id} className="card flex flex-col items-center text-center">
+              <div className={`flex h-24 w-24 items-center justify-center rounded-full text-3xl font-bold shadow-inner ${
+                m.total_sessions > 0 ? avgCircleClasses(m.average) : 'bg-gray-100 text-gray-400'
+              }`}>
                 {m.total_sessions > 0 ? m.average : '—'}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
+              </div>
+              <p className="mt-3 text-xs text-gray-400">
                 {lang === 'kz'
-                  ? `${m.total_sessions} сабақ, баллдар: ${m.sum_grades}`
-                  : `${m.total_sessions} уроков, баллы: ${m.sum_grades}`}
+                  ? `${m.total_sessions} сабақ · ${m.sum_grades} балл`
+                  : `${m.total_sessions} уроков · ${m.sum_grades} баллов`}
               </p>
             </div>
           ))}
