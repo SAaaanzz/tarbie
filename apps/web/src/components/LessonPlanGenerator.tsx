@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Loader2, FileText, AlertTriangle, Clock, Send, CheckCircle2 } from 'lucide-react';
-import { COLLEGE_PAIRS } from '@tarbie/shared';
+import { COLLEGE_PAIRS, BUILDINGS, getFloorsForBuilding, getRoomsForFloor } from '@tarbie/shared';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
@@ -19,15 +19,6 @@ interface PlanResponse {
   usage: { used: number; limit: number };
 }
 
-interface SessionRow {
-  id: string;
-  topic: string;
-  planned_date: string;
-  class_name?: string;
-  time_slot?: string;
-  status?: string;
-}
-
 export function LessonPlanGenerator() {
   const { lang, user } = useAuthStore();
   const ru = lang !== 'kz';
@@ -36,10 +27,14 @@ export function LessonPlanGenerator() {
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(30);
   const [pairNumber, setPairNumber] = useState('');
-  const [group, setGroup] = useState('');
+  const [classId, setClassId] = useState('');
   const [date, setDate] = useState('');
   const [weekTopic, setWeekTopic] = useState('');
   const [classes, setClasses] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Room (needed to create the lesson/session for approval)
+  const [building, setBuilding] = useState('');
+  const [room, setRoom] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,31 +42,22 @@ export function LessonPlanGenerator() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
   const [downloading, setDownloading] = useState(false);
-
-  // Phase 3 — attach to a session and send for approval
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [sessionId, setSessionId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     if (!isTeacher) return;
-    api.get<SessionRow[]>('/api/sessions')
-      .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
-      .catch(() => {});
     api.get<Array<{ id: string; name: string }>>('/api/sessions/classes')
       .then((rows) => setClasses(Array.isArray(rows) ? rows : []))
       .catch(() => {});
   }, [isTeacher]);
 
-  const onSelectSession = (id: string) => {
-    setSessionId(id);
-    const s = sessions.find((x) => x.id === id);
-    if (s) {
-      if (s.class_name) setGroup(s.class_name);
-      if (s.planned_date) setDate(s.planned_date.split('T')[0]?.split(' ')[0] ?? s.planned_date);
-    }
-  };
+  const rooms = useMemo(() => {
+    if (!building) return [];
+    return getFloorsForBuilding(building as never).flatMap((f) => getRoomsForFloor(building as never, f));
+  }, [building]);
+
+  const groupName = classes.find((c) => c.id === classId)?.name ?? '';
 
   // Native date input gives YYYY-MM-DD; the document uses DD.MM.YYYY.
   const fmtDate = (d: string) => {
@@ -81,7 +67,7 @@ export function LessonPlanGenerator() {
 
   const buildMeta = (): LessonPlanMeta => ({
     lang,
-    group,
+    group: groupName,
     curatorName: user?.full_name || '',
     date: date ? fmtDate(date) : '',
     weekTopic: weekTopic || undefined,
@@ -92,6 +78,7 @@ export function LessonPlanGenerator() {
     setLoading(true);
     setError('');
     setPlan(null);
+    setSubmitted(false);
     try {
       const res = await api.post<PlanResponse>('/api/assistant/lesson-plan', {
         topic: topic.trim(),
@@ -113,12 +100,11 @@ export function LessonPlanGenerator() {
     if (!plan) return;
     setDownloading(true);
     try {
-      const meta = buildMeta();
-      const blob = await buildLessonPlanDocx(plan, meta);
+      const blob = await buildLessonPlanDocx(plan, buildMeta());
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${lessonPlanFileName(plan, meta)}.docx`;
+      a.download = `${lessonPlanFileName(plan, buildMeta())}.docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -130,21 +116,42 @@ export function LessonPlanGenerator() {
     }
   };
 
-  const handleSubmitForApproval = async () => {
-    if (!plan || !sessionId) return;
+  // Create a NEW lesson (session) from the form, then send the generated .docx for approval.
+  const handleCreateLesson = async () => {
+    if (!plan) return;
+    if (!classId || !date || !pairNumber || !room) {
+      setError(ru ? 'Заполните группу, дату, урок и кабинет' : 'Топ, күн, сабақ және кабинетті толтырыңыз');
+      return;
+    }
+    const pair = COLLEGE_PAIRS.find((p) => p.number === Number(pairNumber));
+    const timeSlot = pair?.slots[0];
+    if (!timeSlot) {
+      setError(ru ? 'Выберите урок (время)' : 'Сабақты (уақытты) таңдаңыз');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
+      // 1. Create the session (the lesson)
+      const session = await api.post<{ id: string }>('/api/sessions', {
+        class_id: classId,
+        topic: plan.topic_title,
+        planned_date: date,
+        time_slot: timeSlot,
+        room,
+        duration_minutes: duration,
+      });
+      // 2. Submit the generated .docx for approval against the new session
       const meta = buildMeta();
       const blob = await buildLessonPlanDocx(plan, meta);
       const file = new File([blob], `${lessonPlanFileName(plan, meta)}.docx`, { type: DOCX_MIME });
       const formData = new FormData();
-      formData.append('session_id', sessionId);
+      formData.append('session_id', session.id);
       formData.append('file', file);
       await api.postFormData('/api/lesson-approvals', formData);
       setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : ru ? 'Ошибка отправки на утверждение' : 'Бекітуге жіберу қатесі');
+      setError(err instanceof Error ? err.message : ru ? 'Ошибка создания урока' : 'Сабақ құру қатесі');
     } finally {
       setSubmitting(false);
     }
@@ -176,9 +183,9 @@ export function LessonPlanGenerator() {
         {/* Group — only the teacher's own classes, no free typing */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Группа' : 'Топ'}</label>
-          <select className="input-field w-full" value={group} onChange={(e) => setGroup(e.target.value)}>
+          <select className="input-field w-full" value={classId} onChange={(e) => setClassId(e.target.value)}>
             <option value="">{ru ? '— выберите группу —' : '— топты таңдаңыз —'}</option>
-            {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
 
@@ -215,6 +222,25 @@ export function LessonPlanGenerator() {
             <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Тема недели (необяз.)' : 'Апта тақырыбы (міндетті емес)'}</label>
             <input type="text" className="input-field w-full"
               value={weekTopic} onChange={(e) => setWeekTopic(e.target.value)} />
+          </div>
+        </div>
+
+        {/* Room (for creating the lesson) */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Корпус' : 'Корпус'}</label>
+            <select className="input-field w-full" value={building}
+              onChange={(e) => { setBuilding(e.target.value); setRoom(''); }}>
+              <option value="">{ru ? '— корпус —' : '— корпус —'}</option>
+              {BUILDINGS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Кабинет' : 'Кабинет'}</label>
+            <select className="input-field w-full" value={room} onChange={(e) => setRoom(e.target.value)} disabled={!building}>
+              <option value="">{ru ? '— кабинет —' : '— кабинет —'}</option>
+              {rooms.map((r) => <option key={r.displayName} value={r.displayName}>{r.displayName}</option>)}
+            </select>
           </div>
         </div>
 
@@ -290,7 +316,7 @@ export function LessonPlanGenerator() {
             <p className="text-sm text-gray-600">{plan.reflection.method} — {plan.reflection.question}</p>
           </div>
 
-          {/* Confirm → create lesson (send for approval) */}
+          {/* Confirm → create a new lesson (send for approval) */}
           {isTeacher && (
             <div className="border-t border-gray-100 pt-4">
               {submitted ? (
@@ -298,46 +324,24 @@ export function LessonPlanGenerator() {
                   <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
                   <span>
                     {ru
-                      ? 'Отправлено на утверждение. Урок появился в «Моих уроках»; после одобрения администратором будет доступен PDF.'
-                      : 'Бекітуге жіберілді. Сабақ «Менің сабақтарымда» пайда болды; әкімші бекіткеннен кейін PDF қолжетімді болады.'}
+                      ? 'Урок создан и отправлен на утверждение. Он появился в «Моих уроках»; после одобрения администратором будет доступен PDF с подписями.'
+                      : 'Сабақ құрылып, бекітуге жіберілді. Ол «Менің сабақтарымда» пайда болды; әкімші бекіткеннен кейін қолтаңбалы PDF қолжетімді болады.'}
                   </span>
                 </div>
               ) : (
-                <>
-                  <p className="text-sm font-semibold text-gray-700 mb-2">
-                    {ru ? 'Проверьте план. Создать урок?' : 'Жоспарды тексеріңіз. Сабақ құру керек пе?'}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-700 flex-1">
+                    {ru ? 'Проверьте план. Создать урок и отправить на утверждение?' : 'Жоспарды тексеріңіз. Сабақ құрып, бекітуге жіберу керек пе?'}
                   </p>
-                  {sessions.length === 0 ? (
-                    <p className="text-xs text-gray-500">
-                      {ru
-                        ? 'Сначала запланируйте занятие в разделе «Занятия», затем вернитесь сюда, чтобы прикрепить план.'
-                        : 'Алдымен «Сабақтар» бөлімінде сабақ жоспарлаңыз, содан кейін жоспарды тіркеу үшін осында оралыңыз.'}
-                    </p>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <select
-                        className="input-field flex-1"
-                        value={sessionId}
-                        onChange={(e) => onSelectSession(e.target.value)}
-                      >
-                        <option value="">{ru ? '— выберите занятие —' : '— сабақты таңдаңыз —'}</option>
-                        {sessions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {[s.planned_date?.slice(0, 10), s.class_name, s.topic].filter(Boolean).join(' · ')}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={handleSubmitForApproval}
-                        disabled={submitting || !sessionId}
-                        className="btn-primary flex items-center gap-1.5 px-4 shrink-0"
-                      >
-                        {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                        {ru ? 'Создать урок (на утверждение)' : 'Сабақ құру (бекітуге)'}
-                      </button>
-                    </div>
-                  )}
-                </>
+                  <button
+                    onClick={handleCreateLesson}
+                    disabled={submitting}
+                    className="btn-primary flex items-center gap-1.5 px-4 shrink-0"
+                  >
+                    {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    {ru ? 'Создать урок' : 'Сабақ құру'}
+                  </button>
+                </div>
               )}
             </div>
           )}

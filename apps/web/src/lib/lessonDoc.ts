@@ -170,7 +170,9 @@ export async function buildLessonPlanDocx(plan: LessonPlan, meta: LessonPlanMeta
   // ── Page 2: agreement + curator/group ──
   for (const l of t.agreed) children.push(line(l));
   children.push(empty());
-  children.push(line(`${t.curator}${meta.curatorName || '_________'}`));
+  // Keep the underscores after the label — the approval flow injects the curator
+  // signature image into the "Топ жетекшісі: ____" run, then shows the name.
+  children.push(line(`${t.curator}__________  ${meta.curatorName}`));
   children.push(line(`${t.groupLabel}${meta.group || '_________'}`));
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -215,13 +217,6 @@ export async function buildLessonPlanDocx(plan: LessonPlan, meta: LessonPlanMeta
   for (const st of [...plan.stages].sort((a, b) => a.order - b.order)) {
     children.push(line(`${st.order}. ${st.name} — ${st.minutes} ${t.min}`, { bold: true }));
     children.push(line(st.content));
-    // Safety-numbers block under the "minute of safety" stage (heuristic by order = 2).
-    if (st.order === 2) {
-      children.push(line(t.safetyTitle, { bold: true }));
-      for (const [name, num] of t.safety) {
-        children.push(line(`${name} — ${num}`));
-      }
-    }
     children.push(empty());
   }
 
