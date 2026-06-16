@@ -115,10 +115,10 @@ assistant.post('/generate', async (c) => {
 
     let geminiRes: Response | null = null;
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       geminiRes = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: geminiBody,
       });
       if (geminiRes.ok) {
@@ -234,7 +234,7 @@ assistant.post('/lesson-plan', async (c) => {
   const userMsg = buildLessonPlanUserMessage({ topic, lang, durationMinutes, lessonNumber: body.lesson_number });
 
   try {
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+    const models = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash'];
     const geminiBody = JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: [
@@ -251,10 +251,10 @@ assistant.post('/lesson-plan', async (c) => {
 
     let res: Response | null = null;
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: geminiBody,
       });
       if (res.ok) {
