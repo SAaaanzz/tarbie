@@ -23,6 +23,8 @@ export function LessonPlanGenerator() {
   const { lang, user } = useAuthStore();
   const ru = lang !== 'kz';
   const isTeacher = user?.role === 'teacher';
+  const isAdmin = user?.role === 'admin';
+  const canCreate = isTeacher || isAdmin;
 
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(30);
@@ -46,11 +48,11 @@ export function LessonPlanGenerator() {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    if (!isTeacher) return;
+    if (!canCreate) return;
     api.get<Array<{ id: string; name: string }>>('/api/sessions/classes')
       .then((rows) => setClasses(Array.isArray(rows) ? rows : []))
       .catch(() => {});
-  }, [isTeacher]);
+  }, [canCreate]);
 
   const rooms = useMemo(() => {
     if (!building) return [];
@@ -132,7 +134,7 @@ export function LessonPlanGenerator() {
     setSubmitting(true);
     setError('');
     try {
-      // 1. Create the session (the lesson)
+      // 1. Create the session (the lesson). Admin → planned directly; teacher → pending_approval.
       const session = await api.post<{ id: string }>('/api/sessions', {
         class_id: classId,
         topic: plan.topic_title,
@@ -141,14 +143,16 @@ export function LessonPlanGenerator() {
         room,
         duration_minutes: duration,
       });
-      // 2. Submit the generated .docx for approval against the new session
-      const meta = buildMeta();
-      const blob = await buildLessonPlanDocx(plan, meta);
-      const file = new File([blob], `${lessonPlanFileName(plan, meta)}.docx`, { type: DOCX_MIME });
-      const formData = new FormData();
-      formData.append('session_id', session.id);
-      formData.append('file', file);
-      await api.postFormData('/api/lesson-approvals', formData);
+      // 2. Teachers submit the .docx for admin approval; admins are the approver, so skip it.
+      if (isTeacher) {
+        const meta = buildMeta();
+        const blob = await buildLessonPlanDocx(plan, meta);
+        const file = new File([blob], `${lessonPlanFileName(plan, meta)}.docx`, { type: DOCX_MIME });
+        const formData = new FormData();
+        formData.append('session_id', session.id);
+        formData.append('file', file);
+        await api.postFormData('/api/lesson-approvals', formData);
+      }
       setSubmitted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : ru ? 'Ошибка создания урока' : 'Сабақ құру қатесі');
@@ -316,22 +320,28 @@ export function LessonPlanGenerator() {
             <p className="text-sm text-gray-600">{plan.reflection.method} — {plan.reflection.question}</p>
           </div>
 
-          {/* Confirm → create a new lesson (send for approval) */}
-          {isTeacher && (
+          {/* Confirm → create a new lesson */}
+          {canCreate && (
             <div className="border-t border-gray-100 pt-4">
               {submitted ? (
                 <div className="flex items-start gap-2 rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-800">
                   <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
                   <span>
-                    {ru
-                      ? 'Урок создан и отправлен на утверждение. Он появился в «Моих уроках»; после одобрения администратором будет доступен PDF с подписями.'
-                      : 'Сабақ құрылып, бекітуге жіберілді. Ол «Менің сабақтарымда» пайда болды; әкімші бекіткеннен кейін қолтаңбалы PDF қолжетімді болады.'}
+                    {isAdmin
+                      ? (ru
+                        ? 'Урок создан и запланирован. Он появился в разделе «Занятия».'
+                        : 'Сабақ құрылып, жоспарланды. Ол «Сабақтар» бөлімінде пайда болды.')
+                      : (ru
+                        ? 'Урок создан и отправлен на утверждение. Он появился в «Моих уроках»; после одобрения администратором будет доступен PDF с подписями.'
+                        : 'Сабақ құрылып, бекітуге жіберілді. Ол «Менің сабақтарымда» пайда болды; әкімші бекіткеннен кейін қолтаңбалы PDF қолжетімді болады.')}
                   </span>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <p className="text-sm font-semibold text-gray-700 flex-1">
-                    {ru ? 'Проверьте план. Создать урок и отправить на утверждение?' : 'Жоспарды тексеріңіз. Сабақ құрып, бекітуге жіберу керек пе?'}
+                    {isAdmin
+                      ? (ru ? 'Проверьте план. Создать урок?' : 'Жоспарды тексеріңіз. Сабақ құру керек пе?')
+                      : (ru ? 'Проверьте план. Создать урок и отправить на утверждение?' : 'Жоспарды тексеріңіз. Сабақ құрып, бекітуге жіберу керек пе?')}
                   </p>
                   <button
                     onClick={handleCreateLesson}
