@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, Loader2, FileText, AlertTriangle, Clock, Send, CheckCircle2 } from 'lucide-react';
+import { COLLEGE_PAIRS } from '@tarbie/shared';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
 import {
@@ -33,12 +34,12 @@ export function LessonPlanGenerator() {
   const isTeacher = user?.role === 'teacher';
 
   const [topic, setTopic] = useState('');
-  const [duration, setDuration] = useState(45);
-  const [lessonNumber, setLessonNumber] = useState('');
+  const [duration, setDuration] = useState(30);
+  const [pairNumber, setPairNumber] = useState('');
   const [group, setGroup] = useState('');
-  const [curatorName, setCuratorName] = useState('');
   const [date, setDate] = useState('');
   const [weekTopic, setWeekTopic] = useState('');
+  const [classes, setClasses] = useState<Array<{ id: string; name: string }>>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +59,9 @@ export function LessonPlanGenerator() {
     api.get<SessionRow[]>('/api/sessions')
       .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
       .catch(() => {});
+    api.get<Array<{ id: string; name: string }>>('/api/sessions/classes')
+      .then((rows) => setClasses(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
   }, [isTeacher]);
 
   const onSelectSession = (id: string) => {
@@ -69,11 +73,17 @@ export function LessonPlanGenerator() {
     }
   };
 
+  // Native date input gives YYYY-MM-DD; the document uses DD.MM.YYYY.
+  const fmtDate = (d: string) => {
+    const [y, m, dd] = d.split('-');
+    return dd && m && y ? `${dd}.${m}.${y}` : d;
+  };
+
   const buildMeta = (): LessonPlanMeta => ({
     lang,
     group,
-    curatorName: curatorName || user?.full_name || '',
-    date,
+    curatorName: user?.full_name || '',
+    date: date ? fmtDate(date) : '',
     weekTopic: weekTopic || undefined,
   });
 
@@ -87,7 +97,7 @@ export function LessonPlanGenerator() {
         topic: topic.trim(),
         lang,
         duration_minutes: duration,
-        lesson_number: lessonNumber ? Number(lessonNumber) : undefined,
+        lesson_number: pairNumber ? Number(pairNumber) : undefined,
       });
       setPlan(res.plan);
       setWarnings(res.meta.warnings ?? []);
@@ -163,38 +173,55 @@ export function LessonPlanGenerator() {
           onKeyDown={(e) => { if (e.key === 'Enter') handleGenerate(); }}
         />
 
+        {/* Group — only the teacher's own classes, no free typing */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Группа' : 'Топ'}</label>
+          <select className="input-field w-full" value={group} onChange={(e) => setGroup(e.target.value)}>
+            <option value="">{ru ? '— выберите группу —' : '— топты таңдаңыз —'}</option>
+            {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              {ru ? 'Длительность (мин)' : 'Ұзақтығы (мин)'}
-            </label>
-            <input type="number" min={10} max={90} className="input-field w-full"
-              value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Дата' : 'Күні'}</label>
+            <input type="date" className="input-field w-full" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              {ru ? 'Номер урока' : 'Сабақ нөмірі'}
-            </label>
-            <input type="text" className="input-field w-full" placeholder="2"
-              value={lessonNumber} onChange={(e) => setLessonNumber(e.target.value)} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Длительность' : 'Ұзақтығы'}</label>
+            <select className="input-field w-full" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+              <option value={30}>30 {ru ? 'мин' : 'мин'}</option>
+              <option value={60}>60 {ru ? 'мин' : 'мин'}</option>
+              <option value={90}>90 {ru ? 'мин' : 'мин'}</option>
+            </select>
           </div>
         </div>
 
-        <p className="text-xs text-gray-500 pt-1">
-          {ru
-            ? 'Данные для титульного листа (группа, куратор, дата) — можно заполнить сейчас или перед скачиванием Word.'
-            : 'Титул беті үшін деректер (топ, жетекші, күні) — қазір немесе Word жүктер алдында толтыруға болады.'}
-        </p>
         <div className="grid grid-cols-2 gap-3">
-          <input type="text" className="input-field w-full" placeholder={ru ? 'Группа (Т22-4А)' : 'Топ (Т22-4А)'}
-            value={group} onChange={(e) => setGroup(e.target.value)} />
-          <input type="text" className="input-field w-full" placeholder={ru ? 'Куратор (Н. Фамилия)' : 'Жетекші (Н. Тегі)'}
-            value={curatorName} onChange={(e) => setCuratorName(e.target.value)} />
-          <input type="text" className="input-field w-full" placeholder={ru ? 'Дата (17.05.2026)' : 'Күні (17.05.2026)'}
-            value={date} onChange={(e) => setDate(e.target.value)} />
-          <input type="text" className="input-field w-full" placeholder={ru ? 'Тема недели (необяз.)' : 'Апта тақырыбы (міндетті емес)'}
-            value={weekTopic} onChange={(e) => setWeekTopic(e.target.value)} />
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+              <Clock size={12} />{ru ? 'Урок (время)' : 'Сабақ (уақыты)'}
+            </label>
+            <select className="input-field w-full" value={pairNumber} onChange={(e) => setPairNumber(e.target.value)}>
+              <option value="">{ru ? '— выберите урок —' : '— сабақты таңдаңыз —'}</option>
+              {COLLEGE_PAIRS.map((p) => (
+                <option key={p.number} value={p.number}>
+                  {p.number}-{ru ? 'урок' : 'сабақ'} ({p.start}–{p.end})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{ru ? 'Тема недели (необяз.)' : 'Апта тақырыбы (міндетті емес)'}</label>
+            <input type="text" className="input-field w-full"
+              value={weekTopic} onChange={(e) => setWeekTopic(e.target.value)} />
+          </div>
         </div>
+
+        <p className="text-xs text-gray-500">
+          {ru ? 'Куратор: ' : 'Жетекші: '}<span className="font-medium text-gray-700">{user?.full_name}</span>
+          {ru ? ' (берётся автоматически)' : ' (автоматты түрде алынады)'}
+        </p>
 
         <div className="flex items-center justify-between pt-1">
           {usage && (
