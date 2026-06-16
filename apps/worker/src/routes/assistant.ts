@@ -234,7 +234,7 @@ assistant.post('/lesson-plan', async (c) => {
   const userMsg = buildLessonPlanUserMessage({ topic, lang, durationMinutes, lessonNumber: body.lesson_number });
 
   try {
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash-lite'];
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
     const geminiBody = JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: [
@@ -261,8 +261,9 @@ assistant.post('/lesson-plan', async (c) => {
         structuredLog('info', 'Gemini model used (lesson plan)', { model });
         break;
       }
-      if (res.status === 429) {
-        structuredLog('warn', `Model ${model} rate limited, trying next`);
+      // Fall through to the next model on rate-limit (429) or transient overload (5xx).
+      if (res.status === 429 || res.status >= 500) {
+        structuredLog('warn', `Model ${model} unavailable (${res.status}), trying next`);
         continue;
       }
       break;
