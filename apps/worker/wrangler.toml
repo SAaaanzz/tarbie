@@ -37,4 +37,5 @@ crons = ["0 4 * * *"]
 # TELEGRAM_WEBHOOK_SECRET
 # WHATSAPP_TOKEN
 # WHATSAPP_PHONE_NUMBER_ID
-# GEMINI_API_KEY
+# GEMINI_API_KEY     (assistant + lesson-plan generation)
+# CONVERT_API_KEY    (Word → PDF)

@@ -2,12 +2,22 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { structuredLog } from '@tarbie/shared';
+import {
+  LESSON_PLAN_GEMINI_SCHEMA,
+  buildLessonPlanSystemPrompt,
+  buildLessonPlanUserMessage,
+  lessonPlanFewShot,
+  type LessonPlan,
+  type LessonPlanLang,
+} from '../lib/lesson-plan.js';
 
 const assistant = new Hono<HonoEnv>();
 
 assistant.use('*', authMiddleware, requireRole('admin', 'teacher'));
 
 const DAILY_LIMIT = 30;
+// Lesson-plan generation (Claude API) is heavier — separate, smaller daily budget.
+const PLAN_DAILY_LIMIT = 20;
 
 // Strict restriction prefix — AI must only answer about project-related topics
 const RESTRICTION_RU = `ВАЖНО: Ты — AI-ассистент ТОЛЬКО для кураторов колледжей Казахстана в системе «Тәрбие Сағаты». Ты ОБЯЗАН отвечать СТРОГО по теме: тәрбие сағат (воспитательный час), кураторство, педагогика, работа с учениками, родителями, документация для кураторов.
@@ -167,6 +177,153 @@ assistant.get('/usage', async (c) => {
   const usageStr = await c.env.KV.get(usageKey);
   const used = usageStr ? parseInt(usageStr, 10) : 0;
   return c.json({ success: true, data: { used, limit: DAILY_LIMIT } });
+});
+
+// ── Generate a structured lesson plan via Claude API (structured output) ──
+// Returns the plan as JSON; the front-end renders a preview and builds the .docx.
+assistant.post('/lesson-plan', async (c) => {
+  const user = c.get('user');
+  const body = (await c.req.json()) as {
+    topic?: string;
+    lang?: string;
+    duration_minutes?: number;
+    lesson_number?: number;
+  };
+
+  const topic = body.topic?.trim();
+  const lang: LessonPlanLang = body.lang === 'ru' ? 'ru' : 'kz';
+  const durationMinutes =
+    Number.isFinite(body.duration_minutes) && body.duration_minutes! > 0
+      ? Math.round(body.duration_minutes!)
+      : 45;
+
+  if (!topic) {
+    return c.json({ success: false, message: 'topic required' }, 400);
+  }
+
+  // Daily rate limit (separate budget from the Gemini text assistant)
+  const today = new Date().toISOString().split('T')[0];
+  const usageKey = `ai_plan_usage:${user.id}:${today}`;
+  const usageStr = await c.env.KV.get(usageKey);
+  const usage = usageStr ? parseInt(usageStr, 10) : 0;
+  if (usage >= PLAN_DAILY_LIMIT) {
+    return c.json(
+      {
+        success: false,
+        code: 'RATE_LIMIT',
+        message:
+          lang === 'kz'
+            ? `Күнделікті лимит (${PLAN_DAILY_LIMIT} жоспар) аяқталды. Ертең қайта көріңіз.`
+            : `Дневной лимит (${PLAN_DAILY_LIMIT} планов) исчерпан. Попробуйте завтра.`,
+      },
+      429,
+    );
+  }
+
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return c.json({ success: false, message: 'AI service not configured' }, 503);
+  }
+
+  const systemPrompt = buildLessonPlanSystemPrompt(lang, durationMinutes);
+  const fewShot = lessonPlanFewShot(lang);
+  const fewShotUserMsg = buildLessonPlanUserMessage({
+    topic: lang === 'kz' ? 'электр қауіпсіздігі' : 'электробезопасность',
+    lang,
+    durationMinutes: 30,
+  });
+  const userMsg = buildLessonPlanUserMessage({ topic, lang, durationMinutes, lessonNumber: body.lesson_number });
+
+  try {
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash-lite'];
+    const geminiBody = JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [
+        { role: 'user', parts: [{ text: fewShotUserMsg }] },
+        { role: 'model', parts: [{ text: JSON.stringify(fewShot) }] },
+        { role: 'user', parts: [{ text: userMsg }] },
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+        responseSchema: LESSON_PLAN_GEMINI_SCHEMA,
+      },
+    });
+
+    let res: Response | null = null;
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: geminiBody,
+      });
+      if (res.ok) {
+        structuredLog('info', 'Gemini model used (lesson plan)', { model });
+        break;
+      }
+      if (res.status === 429) {
+        structuredLog('warn', `Model ${model} rate limited, trying next`);
+        continue;
+      }
+      break;
+    }
+
+    if (!res || !res.ok) {
+      const errText = res ? await res.text() : 'no response';
+      structuredLog('error', 'Gemini API error (lesson plan)', { status: res?.status, body: errText.slice(0, 500) });
+      const msg =
+        res?.status === 429
+          ? lang === 'kz'
+            ? 'AI қызметі қазір бос емес. Бірнеше секунд күтіп қайта көріңіз.'
+            : 'AI сервис перегружен. Подождите несколько секунд и попробуйте снова.'
+          : lang === 'kz'
+            ? 'AI қызметі уақытша қол жетімсіз'
+            : 'AI сервис временно недоступен';
+      return c.json({ success: false, message: msg }, 502);
+    }
+
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+
+    // responseMimeType=application/json guarantees the part text is valid JSON.
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      return c.json({ success: false, message: 'Empty response from AI' }, 502);
+    }
+
+    let plan: LessonPlan;
+    try {
+      plan = JSON.parse(text) as LessonPlan;
+    } catch {
+      structuredLog('error', 'Lesson plan JSON parse failed', { text: text.slice(0, 300) });
+      return c.json({ success: false, message: 'AI вернул некорректный формат' }, 502);
+    }
+
+    // Light validation — surface (not reject) a chronometry mismatch.
+    const totalMinutes = plan.stages?.reduce((s, st) => s + (st.minutes || 0), 0) ?? 0;
+    const warnings: string[] = [];
+    if (totalMinutes !== durationMinutes) {
+      warnings.push(`stage minutes sum ${totalMinutes} ≠ requested ${durationMinutes}`);
+    }
+
+    await c.env.KV.put(usageKey, String(usage + 1), { expirationTtl: 86400 });
+    structuredLog('info', 'Lesson plan generated', { user_id: user.id, lang, durationMinutes, usage: usage + 1 });
+
+    return c.json({
+      success: true,
+      data: {
+        plan,
+        meta: { lang, duration_minutes: durationMinutes, total_minutes: totalMinutes, warnings },
+        usage: { used: usage + 1, limit: PLAN_DAILY_LIMIT },
+      },
+    });
+  } catch (err) {
+    structuredLog('error', 'Anthropic fetch error', { error: err instanceof Error ? err.message : 'unknown' });
+    return c.json({ success: false, message: 'AI service error' }, 502);
+  }
 });
 
 export default assistant;

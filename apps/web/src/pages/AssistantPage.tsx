@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';
+import { LessonPlanGenerator } from '../components/LessonPlanGenerator';
 import {
   Sparkles, Loader2, Copy, Check, BookOpen, Calendar,
   ClipboardList, Lightbulb, RefreshCw, AlertTriangle,
@@ -61,6 +62,7 @@ export function AssistantPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
+  const [mode, setMode] = useState<'assistant' | 'plan'>('assistant');
 
   useEffect(() => {
     api.get<{ used: number; limit: number }>('/api/assistant/usage')
@@ -117,6 +119,26 @@ export function AssistantPage() {
         </div>
       )}
 
+      {/* Mode tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setMode('assistant')}
+          className={`flex-1 rounded-xl border p-2.5 text-sm font-medium transition-all ${
+            mode === 'assistant' ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+          }`}>
+          {lang === 'kz' ? 'AI-көмекші' : 'AI-ассистент'}
+        </button>
+        <button onClick={() => setMode('plan')}
+          className={`flex-1 rounded-xl border p-2.5 text-sm font-medium transition-all ${
+            mode === 'plan' ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+          }`}>
+          {lang === 'kz' ? 'Жоспарлы сабақ (Word)' : 'Плановый урок (Word)'}
+        </button>
+      </div>
+
+      {mode === 'plan' && <LessonPlanGenerator />}
+
+      {mode === 'assistant' && (
+      <>
       {/* Category selector */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {(Object.keys(PROMPT_TEMPLATES) as PromptCategory[]).map(cat => {
@@ -198,6 +220,8 @@ export function AssistantPage() {
           <p className="text-sm">{lang === 'kz' ? 'Сұрау жазып, нәтижені алыңыз' : 'Введите запрос и получите результат'}</p>
           <p className="text-xs mt-1">{lang === 'kz' ? 'AI көмегімен сабақ жоспарлау' : 'Планируйте занятия с помощью AI'}</p>
         </div>
+      )}
+      </>
       )}
     </div>
   );

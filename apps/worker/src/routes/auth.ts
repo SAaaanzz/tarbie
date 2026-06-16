@@ -58,7 +58,7 @@ auth.post('/login', rateLimit(20, 300), async (c) => {
     return c.json({ success: false, code: ERROR_CODES.USER_NOT_FOUND, message: 'Пользователь с таким номером не найден' }, 404);
   }
 
-  if (!user.telegram_chat_id) {
+  if (!user.telegram_chat_id && c.env.ENVIRONMENT === 'production') {
     return c.json({
       success: false,
       code: 'TELEGRAM_NOT_LINKED',
@@ -70,6 +70,13 @@ auth.post('/login', rateLimit(20, 300), async (c) => {
   crypto.getRandomValues(otpBuf);
   const otp = String(100000 + (otpBuf[0]! % 900000));
   await c.env.KV.put(`otp:${phone}`, otp, { expirationTtl: 300 });
+
+  // Local dev only: skip Telegram delivery and use a fixed code for self-service login.
+  if (c.env.ENVIRONMENT !== 'production') {
+    await c.env.KV.put(`otp:${phone}`, '000000', { expirationTtl: 300 });
+    structuredLog('info', 'DEV login: use OTP 000000', { phone });
+    return c.json({ success: true, data: { message: 'DEV: введите код 000000', expires_in: 300 } });
+  }
 
   try {
     const tgRes = await fetch(`https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
