@@ -56,9 +56,10 @@ const L = {
     ministry: 'ҚАЗАҚСТАН РЕСПУБЛИКАСЫ ОҚУ-АҒАРТУ МИНИСТРЛІГІ',
     dept: 'Алматы қаласы Білім басқармасының',
     college: '«Аlmaty Рolytechnic Сollege» КМҚК',
-    approve: ['Бекітемін:', 'Директордың оқу-тәрбие', 'жұмысы жөніндегі орынбасары', '__________А.Абдраймова', '__________ 2026 ж.'],
+    approve: ['Бекітемін:', 'Директордың оқу-тәрбие', 'жұмысы жөніндегі орынбасары', '__________А.Абдраймова'],
     analysis: 'Тәрбие сағатының талдамасы:',
-    agreed: ['Келісілді:', 'Топ жетекшілерінің әдістемелік', 'бірлестігінің төрайымы', '_______________Сонурова Мехирам Мухтаровна', '«_____»__________ 2026ж.'],
+    agreed: ['Келісілді:', 'Топ жетекшілерінің әдістемелік', 'бірлестігінің төрайымы', '_______________Сонурова Мехирам Мухтаровна'],
+    yearSuffix: 'ж.',
     curator: 'Топ жетекшісі: ',
     groupLabel: 'Тобы: ',
     planTitle: 'Тәрбие сағатының жоспары',
@@ -84,9 +85,10 @@ const L = {
     ministry: 'МИНИСТЕРСТВО ПРОСВЕЩЕНИЯ РЕСПУБЛИКИ КАЗАХСТАН',
     dept: 'Управление образования города Алматы',
     college: 'КГКП «Аlmaty Рolytechnic Сollege»',
-    approve: ['Утверждаю:', 'Заместитель директора по', 'учебно-воспитательной работе', '__________А.Абдраймова', '__________ 2026 г.'],
+    approve: ['Утверждаю:', 'Заместитель директора по', 'учебно-воспитательной работе', '__________А.Абдраймова'],
     analysis: 'Разработка воспитательного часа:',
-    agreed: ['Согласовано:', 'Председатель методического объединения', 'кураторов групп', '_______________Сонурова Мехирам Мухтаровна', '«_____»__________ 2026 г.'],
+    agreed: ['Согласовано:', 'Председатель методического объединения', 'кураторов групп', '_______________Сонурова Мехирам Мухтаровна'],
+    yearSuffix: 'г.',
     curator: 'Куратор группы: ',
     groupLabel: 'Группа: ',
     planTitle: 'План воспитательного часа',
@@ -154,6 +156,7 @@ export async function buildLessonPlanDocx(plan: LessonPlan, meta: LessonPlanMeta
     });
 
   const children: (Paragraph | Table)[] = [];
+  const coverDate = meta.date ? `${meta.date} ${t.yearSuffix}` : `__________ 20__ ${t.yearSuffix}`;
 
   // ── Page 1: cover ──
   children.push(logoPara());
@@ -162,13 +165,16 @@ export async function buildLessonPlanDocx(plan: LessonPlan, meta: LessonPlanMeta
   children.push(center(t.college));
   children.push(empty());
   for (const l of t.approve) children.push(line(l, { align: AlignmentType.RIGHT }));
+  children.push(line(coverDate, { align: AlignmentType.RIGHT }));
   for (let i = 0; i < 4; i++) children.push(empty());
   children.push(line(t.analysis, { bold: true }));
-  children.push(center(`«${meta.weekTopic || '________________________________________'}»`, { bold: true }));
+  // Use the week topic if given, otherwise the lesson's own official title.
+  children.push(center(`«${meta.weekTopic || plan.topic_title}»`, { bold: true }));
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   // ── Page 2: agreement + curator/group ──
   for (const l of t.agreed) children.push(line(l));
+  children.push(line(coverDate));
   children.push(empty());
   // Keep the underscores after the label — the approval flow injects the curator
   // signature image into the "Топ жетекшісі: ____" run, then shows the name.
