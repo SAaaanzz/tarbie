@@ -3,7 +3,6 @@ import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { structuredLog } from '@tarbie/shared';
 import {
-  LESSON_PLAN_GEMINI_SCHEMA,
   buildLessonPlanSystemPrompt,
   buildLessonPlanUserMessage,
   lessonPlanFewShot,
@@ -247,7 +246,6 @@ assistant.post('/lesson-plan', async (c) => {
         temperature: 0.7,
         maxOutputTokens: 8192,
         responseMimeType: 'application/json',
-        responseSchema: LESSON_PLAN_GEMINI_SCHEMA,
       },
     });
 
@@ -281,7 +279,9 @@ assistant.post('/lesson-plan', async (c) => {
           : lang === 'kz'
             ? 'AI қызметі уақытша қол жетімсіз'
             : 'AI сервис временно недоступен';
-      return c.json({ success: false, message: msg }, 502);
+      // Local dev: surface the real Gemini error so it can be diagnosed.
+      const detail = c.env.ENVIRONMENT !== 'production' ? `Gemini ${res?.status}: ${errText.slice(0, 300)}` : undefined;
+      return c.json({ success: false, message: msg, detail }, 502);
     }
 
     const data = (await res.json()) as {
