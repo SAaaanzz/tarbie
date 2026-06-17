@@ -69,12 +69,66 @@ function gradeColor(g: number): string {
   return 'text-red-700 bg-red-100';
 }
 
-// Solid circle color for the student's average grade: red → green by score.
-function avgCircleClasses(avg: number): string {
-  if (avg >= 90) return 'bg-green-500 text-white';   // 90-100 — отлично, зелёный
-  if (avg >= 70) return 'bg-lime-500 text-white';    // 70-90 — хорошо, жёлто-зелёный
-  if (avg >= 50) return 'bg-yellow-400 text-gray-900'; // 50-70 — жёлтый
-  return 'bg-red-500 text-white';                    // <50 — красный
+// Number colour for the gauge centre label, matching the red→yellow→green scale.
+function gaugeTextColor(v: number): string {
+  if (v >= 75) return '#16a34a'; // green
+  if (v >= 50) return '#ca8a04'; // yellow
+  if (v >= 25) return '#f59e0b'; // amber
+  return '#dc2626';              // red
+}
+
+// Half-circle "speedometer" gauge (FACEIT-style): a top semicircle that fills
+// left → right with a red→yellow→green gradient, value 0..max in the centre.
+function GaugeMeter({ value, max = 100, size = 150, empty = false }: {
+  value: number; max?: number; size?: number; empty?: boolean;
+}) {
+  const stroke = 13;
+  const r = size / 2 - stroke / 2 - 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const height = Math.ceil(r + stroke / 2 + 2);
+  const f = Math.max(0, Math.min(1, value / max));
+  const len = Math.PI * r;
+  // Top semicircle from the left (9 o'clock) clockwise to the right (3 o'clock).
+  const track = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+  const gradId = `gauge-grad-${size}`;
+  return (
+    <svg width={size} height={height} viewBox={`0 0 ${size} ${height}`} className="overflow-visible">
+      <defs>
+        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#ef4444" />
+          <stop offset="50%" stopColor="#eab308" />
+          <stop offset="100%" stopColor="#22c55e" />
+        </linearGradient>
+      </defs>
+      {/* Track */}
+      <path d={track} fill="none" stroke="#e5e7eb" strokeWidth={stroke} strokeLinecap="round" />
+      {/* Progress fill (left → right) */}
+      {!empty && (
+        <path
+          d={track}
+          fill="none"
+          stroke={`url(#${gradId})`}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={len}
+          strokeDashoffset={len * (1 - f)}
+          style={{ transition: 'stroke-dashoffset 0.7s ease' }}
+        />
+      )}
+      {/* Centre value */}
+      <text
+        x={cx}
+        y={cy - size * 0.04}
+        textAnchor="middle"
+        fontSize={size * 0.26}
+        fontWeight={800}
+        fill={empty ? '#9ca3af' : gaugeTextColor(value)}
+      >
+        {empty ? '—' : Math.round(value * 10) / 10}
+      </text>
+    </svg>
+  );
 }
 
 function statusIcon(s: string) {
@@ -562,12 +616,8 @@ function StudentView({ lang, userId }: { lang: 'kz' | 'ru'; userId: string }) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {monthly.map((m) => (
             <div key={m.class_id} className="card flex flex-col items-center text-center">
-              <div className={`flex h-24 w-24 items-center justify-center rounded-full text-3xl font-bold shadow-inner ${
-                m.total_sessions > 0 ? avgCircleClasses(m.average) : 'bg-gray-100 text-gray-400'
-              }`}>
-                {m.total_sessions > 0 ? m.average : '—'}
-              </div>
-              <p className="mt-3 text-xs text-gray-400">
+              <GaugeMeter value={m.average} empty={m.total_sessions === 0} />
+              <p className="mt-2 text-xs text-gray-400">
                 {lang === 'kz'
                   ? `${m.total_sessions} сабақ · ${m.sum_grades} балл`
                   : `${m.total_sessions} уроков · ${m.sum_grades} баллов`}

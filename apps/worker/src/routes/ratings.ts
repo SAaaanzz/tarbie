@@ -82,6 +82,35 @@ ratings.post('/session/:sessionId', authMiddleware, async (c) => {
   return c.json({ success: true, data: { id, is_valid: valid, is_anonymous: !!isAnonymous } });
 });
 
+// ── List the student's completed sessions available for review ──
+// Returns completed sessions from the classes the student is enrolled in, with
+// the teacher name and whether the student has already rated each one. The
+// review page (StudentReviewPage) calls this; without it the page always showed
+// "no completed sessions".
+ratings.get('/my-sessions', authMiddleware, async (c) => {
+  const authUser = c.get('user');
+
+  if (authUser.role !== 'student') {
+    return c.json({ success: false, code: 'FORBIDDEN', message: 'Only students have sessions to review' }, 403);
+  }
+
+  const rows = await c.env.DB.prepare(
+    `SELECT ts.id as session_id, ts.topic, ts.planned_date,
+            u.full_name as teacher_name,
+            CASE WHEN sr.id IS NOT NULL THEN 1 ELSE 0 END as already_rated
+     FROM tarbie_sessions ts
+     JOIN classes c ON ts.class_id = c.id
+     JOIN class_students cs ON cs.class_id = ts.class_id AND cs.student_id = ?
+     JOIN users u ON ts.teacher_id = u.id
+     LEFT JOIN session_ratings sr ON sr.session_id = ts.id AND sr.student_id = ?
+     WHERE ts.status = 'completed' AND c.school_id = ?
+     ORDER BY ts.planned_date DESC
+     LIMIT 100`
+  ).bind(authUser.id, authUser.id, authUser.school_id).all();
+
+  return c.json({ success: true, data: rows.results });
+});
+
 // ── Get teacher rating stats (admin/teacher) ──
 ratings.get('/teacher/:teacherId', authMiddleware, async (c) => {
   const authUser = c.get('user');
