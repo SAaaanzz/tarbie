@@ -7,12 +7,32 @@ const teacher = new Hono<HonoEnv>();
 
 teacher.use('*', authMiddleware, requireRole('teacher'));
 
-// ── List users created by this teacher ──
+// ── List users visible to this teacher (curator) ──
+// A curator sees the participants of their own groups (students enrolled in
+// classes where they are the teacher or the creator) PLUS any users they
+// created themselves (so freshly-created students show up immediately and can
+// be assigned to a group). Students linked to a curator's group by an admin or
+// via import are now visible too — previously the list was filtered to
+// `created_by = me` only, which left curators with an empty user list and made
+// it impossible to add those students to a group (and therefore to grade them).
 teacher.get('/users', async (c) => {
   const user = c.get('user');
   const rows = await c.env.DB.prepare(
-    'SELECT id, full_name, role, phone, telegram_chat_id, lang, created_at FROM users WHERE school_id = ? AND created_by = ? ORDER BY full_name'
-  ).bind(user.school_id, user.id).all();
+    `SELECT DISTINCT u.id, u.full_name, u.role, u.phone, u.telegram_chat_id,
+            u.lang, u.avatar_url, u.created_at
+     FROM users u
+     WHERE u.school_id = ?
+       AND (
+         u.created_by = ?
+         OR u.id IN (
+           SELECT cs.student_id
+           FROM class_students cs
+           JOIN classes cl ON cs.class_id = cl.id
+           WHERE cl.school_id = ? AND (cl.teacher_id = ? OR cl.created_by = ?)
+         )
+       )
+     ORDER BY u.full_name`
+  ).bind(user.school_id, user.id, user.school_id, user.id, user.id).all();
   return c.json({ success: true, data: rows.results });
 });
 
