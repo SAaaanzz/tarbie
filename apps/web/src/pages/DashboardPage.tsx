@@ -1,3 +1,4 @@
+// Страница «Панель управления»: сводка и быстрый обзор для текущего пользователя.
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

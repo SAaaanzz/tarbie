@@ -1,3 +1,4 @@
+// Страница «Мои курсы»: курсы, на которые записан ученик, и их прогресс.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

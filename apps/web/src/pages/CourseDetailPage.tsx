@@ -1,3 +1,4 @@
+// Страница курса: описание, программа (модули/уроки), запись на курс.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

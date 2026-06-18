@@ -1,3 +1,4 @@
+// Страница «Прогон тестов API» (для админа): запуск проверок эндпоинтов.
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore } from '../store/theme';

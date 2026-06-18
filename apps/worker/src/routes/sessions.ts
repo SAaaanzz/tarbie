@@ -1,3 +1,5 @@
+// Маршруты занятий (тәрбие сағаты): список и фильтры по ролям,
+// создание, изменение, завершение и удаление занятий, проверка занятости кабинетов.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

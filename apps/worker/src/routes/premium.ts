@@ -1,3 +1,4 @@
+// Маршруты премиум-функций: рамки аватара, цвет имени и срок действия премиума.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

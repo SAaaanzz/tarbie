@@ -1,3 +1,5 @@
+// Страница «Оценки»: у куратора — журнал и выставление оценок за занятие,
+// у ученика — «Мои оценки» со спидометром среднего балла.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

@@ -1,3 +1,4 @@
+// Маршруты отчётов: месячная статистика по группам (проведено/посещаемость).
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

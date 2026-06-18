@@ -1,3 +1,4 @@
+// Подпись и проверка JWT-токенов (алгоритм HMAC SHA-256) на Web Crypto API.
 import type { JwtPayload } from '@tarbie/shared';
 
 const encoder = new TextEncoder();
@@ -34,6 +35,7 @@ function encodeJson(obj: unknown): string {
   return base64UrlEncode(encoder.encode(JSON.stringify(obj)));
 }
 
+// Создать подписанный токен с временем жизни ttlSeconds (по умолчанию 24 ч).
 export async function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>, secret: string, ttlSeconds = 86400): Promise<string> {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
@@ -55,6 +57,7 @@ export async function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>, secret: 
   return `${signingInput}.${base64UrlEncode(signature)}`;
 }
 
+// Проверить подпись и срок действия токена. Вернёт payload или null.
 export async function verifyJwt(token: string, secret: string): Promise<JwtPayload | null> {
   const parts = token.split('.');
   if (parts.length !== 3) return null;

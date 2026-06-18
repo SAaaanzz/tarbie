@@ -1,3 +1,6 @@
+// Главная точка входа бэкенда (Cloudflare Worker на фреймворке Hono).
+// Здесь: подключение CORS и всех маршрутов /api/*, обработка ошибок,
+// а также cron-задачи (ежедневные напоминания и авто-завершение занятий).
 import { Hono } from 'hono';
 import type { HonoEnv, Env } from './env.js';
 import { corsMiddleware } from './middleware/cors.js';
@@ -29,6 +32,7 @@ const app = new Hono<HonoEnv>();
 app.use('*', corsMiddleware);
 app.use('*', bodyLimit());
 
+// Подключение всех разделов API по их базовым путям.
 app.route('/api/auth', authRoutes);
 app.route('/api/sessions', sessionRoutes);
 app.route('/api/sessions', attendanceRoutes);
@@ -77,6 +81,8 @@ async function queueFanOut(
   }
 }
 
+// Обработчик cron: запускается по расписанию (см. wrangler.toml).
+// Шлёт напоминания о завтрашних занятиях и авто-завершает прошедшие.
 async function handleCron(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   const cron = event.cron;
   structuredLog('info', 'Cron triggered', { cron });

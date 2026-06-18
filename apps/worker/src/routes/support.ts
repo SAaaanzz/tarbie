@@ -1,3 +1,4 @@
+// Маршруты техподдержки: тикеты пользователей и пересылка их админу в Telegram.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware } from '../middleware/auth.js';

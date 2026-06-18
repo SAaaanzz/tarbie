@@ -1,3 +1,5 @@
+// Маршруты куратора: его ученики, его группы и импорт учеников/групп.
+// Все маршруты требуют роль teacher.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

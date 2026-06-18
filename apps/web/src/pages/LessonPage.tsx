@@ -1,3 +1,4 @@
+// Страница урока курса: просмотр содержимого и отметка прогресса прохождения.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

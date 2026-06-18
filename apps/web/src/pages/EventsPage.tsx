@@ -1,3 +1,4 @@
+// Страница «Мероприятия»: список и управление событиями.
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

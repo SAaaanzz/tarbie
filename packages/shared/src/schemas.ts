@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
+// Схемы валидации (Zod) для проверки данных, приходящих в API.
+// Бэкенд прогоняет тела запросов через эти схемы перед обработкой.
+
+// Телефон в формате +7XXXXXXXXXX.
 const phoneRegex = /^\+7\d{10}$/;
 
+// ─── Перечисления (enum) ───
 export const langSchema = z.enum(['kz', 'ru']);
 export const roleSchema = z.enum(['admin', 'teacher', 'student']);
 export const sessionStatusSchema = z.enum(['pending_approval', 'planned', 'completed', 'cancelled', 'rescheduled']);
@@ -17,6 +22,7 @@ export const notificationEventTypeSchema = z.enum([
   'TOPIC_REMINDER',
 ]);
 
+// ─── Авторизация: вход по телефону и проверка OTP-кода ───
 export const loginSchema = z.object({
   phone: z.string().regex(phoneRegex, 'Phone must be in +7XXXXXXXXXX format'),
 });
@@ -26,6 +32,7 @@ export const verifyOtpSchema = z.object({
   otp: z.string().length(6, 'OTP must be 6 digits').regex(/^\d{6}$/, 'OTP must contain only digits'),
 });
 
+// ─── Занятия (тәрбие сағаты): создание, изменение, завершение ───
 export const createSessionSchema = z.object({
   class_id: z.string().uuid(),
   topic: z.string().min(1).max(500),
@@ -52,6 +59,7 @@ export const completeSessionSchema = z.object({
   attachment_url: z.string().url().nullable().optional(),
 });
 
+// ─── Посещаемость ───
 export const attendanceEntrySchema = z.object({
   student_id: z.string().uuid(),
   status: attendanceStatusSchema,
@@ -61,6 +69,7 @@ export const bulkAttendanceSchema = z.object({
   attendance: z.array(attendanceEntrySchema).min(1),
 });
 
+// ─── Пользователи и группы ───
 export const createUserSchema = z.object({
   full_name: z.string().min(2).max(200),
   role: roleSchema,
@@ -111,6 +120,7 @@ export const schoolSchema = z.object({
   city: z.string().min(2).max(100),
 });
 
+// ─── Оценки (статус + балл 0–100) ───
 export const gradeEntrySchema = z.object({
   student_id: z.string().uuid(),
   status: gradeStatusSchema,
@@ -122,6 +132,7 @@ export const bulkGradeSchema = z.object({
   grades: z.array(gradeEntrySchema).min(1),
 });
 
+// ─── Онлайн-курсы: курсы, модули, уроки, отзывы, прогресс ───
 export const courseStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const lessonTypeSchema = z.enum(['video', 'text']);
 export const enrollmentStatusSchema = z.enum(['active', 'completed', 'cancelled']);

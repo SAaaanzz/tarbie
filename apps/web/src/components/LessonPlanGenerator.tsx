@@ -1,3 +1,5 @@
+// Генератор плана урока: форма с параметрами, вызов AI и предпросмотр,
+// выгрузка готового плана в Word-документ.
 import { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Loader2, FileText, AlertTriangle, Clock, Send, CheckCircle2 } from 'lucide-react';
 import { COLLEGE_PAIRS, BUILDINGS, getFloorsForBuilding, getRoomsForFloor } from '@tarbie/shared';

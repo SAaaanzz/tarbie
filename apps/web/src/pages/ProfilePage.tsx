@@ -1,3 +1,4 @@
+// Страница «Профиль»: данные пользователя, аватар, язык интерфейса.
 import React, { useState, useRef } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

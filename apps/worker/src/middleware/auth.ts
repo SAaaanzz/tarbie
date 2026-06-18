@@ -4,6 +4,9 @@ import { verifyJwt } from '../lib/jwt.js';
 import type { Role } from '@tarbie/shared';
 import { ERROR_CODES } from '@tarbie/shared';
 
+// Middleware авторизации: проверяет JWT и роли пользователя.
+
+// Проверяет заголовок Authorization, валидирует токен и кладёт user в контекст.
 export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
@@ -25,6 +28,7 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   await next();
 });
 
+// Ограничивает доступ к маршруту только указанными ролями.
 export function requireRole(...roles: Role[]) {
   return createMiddleware<HonoEnv>(async (c, next) => {
     const user = c.get('user');

@@ -1,3 +1,5 @@
+// Цветной бейдж статуса занятия (запланировано/проведено/отменено и т.д.)
+// с подписью на нужном языке.
 import type { SessionStatus } from '@tarbie/shared';
 import { useAuthStore } from '../store/auth';
 

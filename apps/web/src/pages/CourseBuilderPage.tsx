@@ -1,3 +1,4 @@
+// Страница «Конструктор курса»: создание/редактирование курса, модулей и уроков.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

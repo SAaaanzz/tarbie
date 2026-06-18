@@ -1,3 +1,5 @@
+// Маршруты авторизации: вход по телефону + OTP, вход через Telegram,
+// выдача JWT-токена и получение/обновление своего профиля (/me).
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { signJwt } from '../lib/jwt.js';

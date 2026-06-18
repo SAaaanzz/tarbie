@@ -1,3 +1,4 @@
+// Окружение фонового воркера: привязки к ресурсам Cloudflare и секреты ботов.
 export interface BotEnv {
   DB: D1Database;
   KV: KVNamespace;

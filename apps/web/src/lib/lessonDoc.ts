@@ -1,6 +1,6 @@
-// Builds the lesson-plan Word document (.docx) from a generated plan + metadata,
-// reproducing the college template: fixed cover pages (with the emblem),
-// page-3 header, then the plan body. Bilingual (kz / ru).
+// Формирует Word-документ (.docx) плана урока из сгенерированного плана и метаданных
+// по шаблону колледжа: титульные страницы с эмблемой, шапка на 3-й странице,
+// затем тело плана. Двуязычно (kz / ru).
 import {
   Document,
   Packer,

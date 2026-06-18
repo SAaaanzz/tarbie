@@ -1,3 +1,5 @@
+// Глобальное состояние авторизации (Zustand): текущий пользователь, токен,
+// язык интерфейса. Сохраняется в localStorage между сессиями.
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, Lang } from '@tarbie/shared';

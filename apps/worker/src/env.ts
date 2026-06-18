@@ -1,3 +1,6 @@
+// Описание окружения воркера: привязки к ресурсам Cloudflare и секреты.
+
+// Ресурсы и секреты, доступные воркеру (база, KV, очередь, токены).
 export interface Env {
   DB: D1Database;
   KV: KVNamespace;
@@ -16,12 +19,14 @@ export interface Env {
   CONVERT_API_KEY?: string;
 }
 
+// Данные авторизованного пользователя, извлечённые из JWT.
 export interface AuthUser {
   id: string;
   role: 'admin' | 'teacher' | 'student';
   school_id: string;
 }
 
+// Типизация контекста Hono: привязки + переменные запроса (текущий user).
 export interface HonoEnv {
   Bindings: Env;
   Variables: {

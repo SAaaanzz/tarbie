@@ -1,11 +1,13 @@
 import { createMiddleware } from 'hono/factory';
 import type { HonoEnv } from '../env.js';
 
+// CORS: разрешает запросы только с доверенных доменов фронтенда.
 export const corsMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   const origin = c.req.header('Origin') ?? '';
   const appUrl = c.env.APP_URL ?? '';
+  // Белый список разрешённых источников (прод-домены + локальная разработка).
   const allowedOrigins = [appUrl, 'https://tarbie.online', 'https://tarbie-sagaty.pages.dev', 'https://tarbie-online.pages.dev', 'https://tarbie-web.pages.dev', 'http://localhost:5173'].filter(Boolean);
-  // Also allow *.pages.dev subdomains (preview deployments)
+  // Плюс превью-деплои на поддоменах *.tarbie-sagaty.pages.dev
   const isPagesPreview = /^https:\/\/[a-z0-9-]+\.tarbie-sagaty\.pages\.dev$/.test(origin);
   
   const isAllowed = allowedOrigins.includes(origin) || isPagesPreview;

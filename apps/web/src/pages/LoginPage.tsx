@@ -1,3 +1,4 @@
+// Страница входа: авторизация по телефону + OTP и через Telegram.
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

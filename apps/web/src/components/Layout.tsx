@@ -1,3 +1,5 @@
+// Каркас страницы: боковое меню навигации (пункты и для каких ролей они видны),
+// переключатель темы и языка, выход из системы.
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore } from '../store/theme';

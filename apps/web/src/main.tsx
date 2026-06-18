@@ -1,3 +1,5 @@
+// Корень фронтенда: монтирование приложения, роутер (путь → страница),
+// проверка ролей, а также страницы и модалки админки (пользователи и группы).
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { useAuthStore } from './store/auth';

@@ -1,3 +1,4 @@
+// Страница «Поддержка»: создание обращений в техподдержку и переписка.
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

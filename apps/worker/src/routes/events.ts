@@ -1,3 +1,4 @@
+// Маршруты мероприятий: создание, список и управление событиями.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

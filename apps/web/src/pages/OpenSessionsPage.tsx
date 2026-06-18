@@ -1,3 +1,4 @@
+// Страница «Открытые занятия»: публикация открытых уроков и запись на них.
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

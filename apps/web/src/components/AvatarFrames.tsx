@@ -1,3 +1,4 @@
+// Премиум-рамки для аватара: описание доступных рамок и их отрисовка.
 import React from 'react';
 
 export interface FrameDef {

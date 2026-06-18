@@ -1,3 +1,4 @@
+// Маршруты AI-ассистента: ответы помощника и генерация плана урока.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

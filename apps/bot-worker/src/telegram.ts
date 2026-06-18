@@ -1,3 +1,4 @@
+// Работа с Telegram: приём вебхуков бота и отправка сообщений пользователям.
 import type { BotEnv } from './env.js';
 import { structuredLog, formatDate, nowISO, generateId } from '@tarbie/shared';
 import type { Lang } from '@tarbie/shared';

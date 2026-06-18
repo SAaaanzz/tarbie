@@ -1,17 +1,24 @@
+// Вспомогательные функции, общие для всего проекта:
+// генерация ID, работа с датами, шаблоны уведомлений, коды ошибок, логирование.
+
+// Сгенерировать уникальный идентификатор (UUID).
 export function generateId(): string {
   return crypto.randomUUID();
 }
 
+// Текущее время в формате ISO (используется для created_at/updated_at).
 export function nowISO(): string {
   return new Date().toISOString();
 }
 
+// Подставить переменные {{name}} в текст шаблона уведомления.
 export function renderTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     return vars[key] ?? `{{${key}}}`;
   });
 }
 
+// Дата прописью на казахском (для документов/уведомлений).
 export function formatDateKz(dateStr: string): string {
   const d = new Date(dateStr);
   const months: Record<number, string> = {
@@ -22,6 +29,7 @@ export function formatDateKz(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Дата прописью на русском.
 export function formatDateRu(dateStr: string): string {
   const d = new Date(dateStr);
   const months: Record<number, string> = {
@@ -32,10 +40,12 @@ export function formatDateRu(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Выбрать формат даты по языку пользователя.
 export function formatDate(dateStr: string, lang: 'kz' | 'ru'): string {
   return lang === 'kz' ? formatDateKz(dateStr) : formatDateRu(dateStr);
 }
 
+// Единый справочник кодов ошибок API (используется в ответах сервера).
 export const ERROR_CODES = {
   UNAUTHORIZED: 'UNAUTHORIZED',
   FORBIDDEN: 'FORBIDDEN',
@@ -58,6 +68,7 @@ export const ERROR_CODES = {
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 
+// Структурированный лог в JSON (удобно искать в логах Cloudflare).
 export function structuredLog(
   level: 'info' | 'warn' | 'error',
   message: string,

@@ -1,3 +1,4 @@
+// Глобальное состояние темы оформления (светлая/тёмная), Zustand + localStorage.
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 

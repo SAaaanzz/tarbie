@@ -1,3 +1,5 @@
+// Обработчик очереди уведомлений: берёт сообщения, подставляет шаблон по языку
+// и рассылает их получателям через Telegram/WhatsApp, ведёт журнал отправок.
 import type { BotEnv } from './env.js';
 import { sendTelegramMessage } from './telegram.js';
 import { sendWhatsAppMessage } from './whatsapp.js';

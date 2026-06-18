@@ -25,9 +25,3 @@ max_retries = 3
 [vars]
 ENVIRONMENT = "production"
 APP_URL = "https://tarbie.online"
-
-# Secrets (set via `wrangler secret put`):
-# TELEGRAM_BOT_TOKEN
-# TELEGRAM_WEBHOOK_SECRET
-# WHATSAPP_TOKEN
-# WHATSAPP_PHONE_NUMBER_ID

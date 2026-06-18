@@ -1,3 +1,5 @@
+// Маршруты оценок: выставление оценок куратором за занятие, журнал группы,
+// средние баллы за месяц и оценки конкретного ученика (для его личного кабинета).
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

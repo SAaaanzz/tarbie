@@ -1,3 +1,4 @@
+// Маршруты уведомлений: постановка рассылок в очередь и журнал отправок.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

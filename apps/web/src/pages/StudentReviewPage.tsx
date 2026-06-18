@@ -1,3 +1,5 @@
+// Страница «Отзывы»: ученик оценивает завершённые занятия своих групп
+// (звёзды + комментарий, можно анонимно).
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

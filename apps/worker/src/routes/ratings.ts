@@ -1,3 +1,5 @@
+// Маршруты отзывов: ученик оценивает занятие (с фильтром «накруток»),
+// список занятий для оценки и агрегированный рейтинг кураторов.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { generateId, nowISO, ERROR_CODES } from '@tarbie/shared';

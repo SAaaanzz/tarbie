@@ -1,5 +1,5 @@
-// Lesson-plan generation — system prompt, JSON schema and few-shot examples
-// used by the `lesson_plan` assistant category (Claude API, structured output).
+// Генерация плана урока — системный промпт, JSON-схема и примеры,
+// которые использует AI-ассистент (категория `lesson_plan`, структурированный вывод).
 
 export type LessonPlanLang = 'kz' | 'ru';
 

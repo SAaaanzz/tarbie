@@ -1,3 +1,5 @@
+// HTTP-клиент для обращения к бэкенду: подставляет JWT в заголовок,
+// разбирает ответы и ошибки сервера, обрабатывает 401 (выход из системы).
 import type { ApiResponse, ApiError } from '@tarbie/shared';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'https://dprabota.bahtyarsanzhar.workers.dev';

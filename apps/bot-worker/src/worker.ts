@@ -1,3 +1,5 @@
+// Точка входа фонового воркера уведомлений: принимает вебхуки Telegram
+// и обрабатывает сообщения из очереди рассылок.
 import type { BotEnv } from './env.js';
 import { handleTelegramWebhook } from './telegram.js';
 import { handleQueue } from './queue-consumer.js';

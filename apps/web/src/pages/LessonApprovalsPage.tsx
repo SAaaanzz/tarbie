@@ -1,3 +1,4 @@
+// Страница «Утверждение уроков»: согласование планов уроков (куратор/админ).
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

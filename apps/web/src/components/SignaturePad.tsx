@@ -1,3 +1,4 @@
+// Холст для рисования подписи мышью/пальцем (canvas) с очисткой и сохранением.
 import React, { useRef, useState, useEffect } from 'react';
 import { Eraser, Check, X } from 'lucide-react';
 

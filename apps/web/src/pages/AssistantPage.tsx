@@ -1,3 +1,4 @@
+// Страница «AI-ассистент»: чат с помощником и генерация плана урока.
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

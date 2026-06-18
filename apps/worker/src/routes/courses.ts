@@ -1,3 +1,5 @@
+// Маршруты онлайн-курсов: курсы, модули, уроки, запись на курс,
+// прогресс прохождения и отзывы о курсах.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

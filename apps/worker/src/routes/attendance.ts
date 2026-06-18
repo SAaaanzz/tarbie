@@ -1,3 +1,4 @@
+// Маршруты посещаемости: отметка присутствия/отсутствия учеников на занятии.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

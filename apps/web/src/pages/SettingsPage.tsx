@@ -1,3 +1,4 @@
+// Страница «Настройки»: параметры приложения и аккаунта.
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

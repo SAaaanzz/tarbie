@@ -1,3 +1,4 @@
+// Страница «Отчёты»: месячная статистика по выбранной группе.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

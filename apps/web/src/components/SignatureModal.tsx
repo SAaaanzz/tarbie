@@ -1,3 +1,4 @@
+// Модальное окно для ввода и сохранения электронной подписи пользователя.
 import { useState } from 'react';
 import { SignaturePad } from './SignaturePad';
 import { api } from '../lib/api';

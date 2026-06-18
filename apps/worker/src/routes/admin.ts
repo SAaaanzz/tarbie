@@ -1,3 +1,6 @@
+// Маршруты администратора: управление пользователями и группами,
+// импорт и авто-назначение занятий, журнал изменений, настройки и обслуживание.
+// Все маршруты требуют роль admin.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

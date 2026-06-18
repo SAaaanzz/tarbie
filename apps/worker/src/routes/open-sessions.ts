@@ -1,3 +1,4 @@
+// Маршруты открытых занятий: публикация и запись на открытые уроки.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

@@ -1,3 +1,4 @@
+// Отправка сообщений через WhatsApp Business API.
 import type { BotEnv } from './env.js';
 import { structuredLog } from '@tarbie/shared';
 

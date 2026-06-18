@@ -2,6 +2,9 @@ import { createMiddleware } from 'hono/factory';
 import type { HonoEnv } from '../env.js';
 import { ERROR_CODES } from '@tarbie/shared';
 
+// Ограничение частоты запросов (защита от перебора/спама) через KV.
+
+// Middleware: лимит запросов по IP за окно времени.
 export function rateLimit(maxRequests: number, windowSeconds: number) {
   return createMiddleware<HonoEnv>(async (c, next) => {
     const key = c.req.header('CF-Connecting-IP') ?? 'unknown';
@@ -22,9 +25,9 @@ export function rateLimit(maxRequests: number, windowSeconds: number) {
   });
 }
 
-// Imperative rate-limit check that route handlers can run AFTER parsing the
-// request body (e.g. to throttle by phone instead of IP). Returns true when the
-// caller is over the limit and should bail out with a 429.
+// Ручная проверка лимита внутри обработчика — когда нужно ограничивать
+// не по IP, а по данным из тела запроса (например, по номеру телефона).
+// Возвращает true, если лимит превышен и нужно ответить 429.
 export async function isOverLimit(
   kv: KVNamespace,
   bucket: string,

@@ -1,3 +1,4 @@
+// Страница «Каталог курсов»: список доступных курсов с поиском и фильтрами.
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

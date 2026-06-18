@@ -1,3 +1,5 @@
+// Маршруты согласования уроков: куратор отправляет план на утверждение,
+// админ одобряет/отклоняет, обеим сторонам уходят уведомления.
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

@@ -1,3 +1,5 @@
+// Маршруты электронных подписей: сохранение и получение подписи
+// куратора/админа для документов (планов уроков и т.п.).
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';

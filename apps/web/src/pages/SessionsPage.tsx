@@ -1,3 +1,4 @@
+// Страница «Тәрбие сағаттары»: список занятий, создание и управление ими.
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth';
 import { api } from '../lib/api';

@@ -1,3 +1,5 @@
+// Логика Telegram-бота: приём вебхуков и отправка сообщений ученикам/кураторам
+// (оценки, запросы на отзыв, согласование уроков, пересылка тикетов поддержки).
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import { generateId, nowISO, structuredLog } from '@tarbie/shared';

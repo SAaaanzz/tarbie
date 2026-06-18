@@ -1,3 +1,8 @@
+// Типы предметной области, общие для фронтенда и бэкенда.
+// Здесь описаны все сущности системы: пользователи, группы, занятия,
+// оценки, уведомления, курсы, отзывы и форматы ответов API.
+
+// Роли пользователей: администратор, куратор (преподаватель), ученик.
 export type Role = 'admin' | 'teacher' | 'student';
 export type Lang = 'kz' | 'ru';
 export type SessionStatus = 'pending_approval' | 'planned' | 'completed' | 'cancelled' | 'rescheduled';
@@ -20,6 +25,7 @@ export interface School {
   created_at: string;
 }
 
+// Пользователь системы (любой роли).
 export interface User {
   id: string;
   school_id: string;
@@ -37,6 +43,7 @@ export interface User {
   created_at: string;
 }
 
+// Группа (класс): за ней закреплён куратор (teacher_id).
 export interface Class {
   id: string;
   school_id: string;
@@ -45,6 +52,7 @@ export interface Class {
   academic_year: string;
 }
 
+// Тәрбие сағаты (классный час) — одно проведённое/запланированное занятие.
 export interface TarbieSession {
   id: string;
   class_id: string;
@@ -89,8 +97,10 @@ export interface NotificationTemplate {
   template_text: string;
 }
 
+// Статус на занятии: присутствовал / отсутствовал (Н) / отработал (Н(X)).
 export type GradeStatus = 'present' | 'absent' | 'makeup';
 
+// Оценка ученика за конкретное занятие.
 export interface Grade {
   id: string;
   session_id: string;
@@ -121,6 +131,7 @@ export interface MonthlyStudentAverage {
   average: number;
 }
 
+// ─── Универсальные форматы ответов API (успех/ошибка/постранично) ───
 export interface ApiResponse<T = unknown> {
   success: true;
   data: T;
@@ -156,6 +167,7 @@ export interface QueueMessage {
   attempt: number;
 }
 
+// Отзыв ученика о занятии (оценка куратора), может быть анонимным.
 export interface SessionRating {
   id: string;
   session_id: string;
@@ -178,6 +190,7 @@ export interface TeacherRatingStats {
   recent_reviews: { rating: number; reason: string; created_at: string; is_anonymous: boolean; student_name: string | null; student_avatar_url: string | null }[];
 }
 
+// ─── Онлайн-курсы: курсы, модули, уроки, запись и прогресс ───
 export type CourseStatus = 'draft' | 'published' | 'archived';
 export type LessonType = 'video' | 'text';
 export type EnrollmentStatus = 'active' | 'completed' | 'cancelled';
